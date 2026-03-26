@@ -10,7 +10,31 @@ import {
 } from './data/demoData'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-const BACKEND_ORIGIN = import.meta.env.VITE_BACKEND_ORIGIN || 'http://localhost:8000'
+const inferBackendOrigin = () => {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000'
+  }
+
+  const { protocol, hostname, host, port } = window.location
+
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return `${protocol}//${hostname}:8000`
+  }
+
+  // GitHub Codespaces: replace frontend marker (-5173) with backend (-8000)
+  if (hostname.endsWith('.app.github.dev')) {
+    const rewrittenHost = host.replace(/-5173(?=\.|:|$)/, '-8000')
+    return `${protocol}//${rewrittenHost}`
+  }
+
+  if (port === '5173') {
+    return `${protocol}//${hostname}:8000`
+  }
+
+  return `${protocol}//${host}`
+}
+
+const BACKEND_ORIGIN = import.meta.env.VITE_BACKEND_ORIGIN || inferBackendOrigin()
 const DEFAULT_CENTER = [55.7558, 37.6176] // Москва
 
 const initialFilters = {
@@ -982,3 +1006,4 @@ function App() {
 }
 
 export default App
+
