@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+
+{% block title %}Кабинет риэлтора · RealEstate{% endblock %}
+
+{% block content %}
+<section class="profile-shell">
+    <header class="profile-header">
+        <div>
+            <div class="profile-title">Кабинет риэлтора</div>
+            <div class="profile-subtitle">
+                {{ realtor.user.get_full_name|default:realtor.user.username }} · Риэлтор
+            </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <span class="badge">
+                Телефон: {{ realtor.phone|default:"не указан" }}
+            </span>
+            <span class="muted" style="font-size:11px;">
+                Управление объектами идёт через API /api/my/properties/
+            </span>
+        </div>
+    </header>
+
+    <nav class="profile-tabs">
+        <a href="#tab-properties" class="tab-link active" onclick="switchTab(event, 'tab-properties')">
+            Мои объекты
+        </a>
+        <a href="#tab-profile" class="tab-link" onclick="switchTab(event, 'tab-profile')">
+            Профиль риэлтора
+        </a>
+    </nav>
+
+    <div class="divider"></div>
+
+    <section id="tab-properties" class="profile-tab-panel" style="display:block;">
+        <div class="field" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div class="field-label">Объявления</div>
+                <div class="muted" style="font-size:12px;">
+                    Управляйте своими объектами и добавляйте новые.
+                </div>
+            </div>
+            <button type="button" class="nav-btn" onclick="openCreatePropertyModal();">
+                Загрузить объект
+            </button>
+        </div>
+
+        <!-- Модальное окно создания объекта -->
+        <div id="create-property-modal" class="modal-backdrop" style="display:none;">
+            <div class="modal-card">
+                <header class="profile-header" style="padding:16px 20px 8px 20px;">
+                    <div>
+                        <div class="profile-title" style="font-size:18px;">Новый объект</div>
+                        <div class="profile-subtitle" style="font-size:12px;">
+                            Заполните информацию об объекте и сохраните объявление.
+                        </div>
+                    </div>
+                    <button type="button" class="nav-btn-secondary" onclick="closeCreatePropertyModal();">
+                        Закрыть
+                    </button>
+                </header>
+                <div class="divider"></div>
+                <form id="create-property-form" class="form-grid" onsubmit="return createProperty(event);" style="padding:16px 20px 20px 20px;">
+                <div class="profile-grid">
+                    <div>
+                        <input type="text" name="title" class="field-input" placeholder="Заголовок" required>
+                    </div>
+                    <div>
+                        <input type="number" name="price" class="field-input" placeholder="Цена, ₽" required step="1" min="0">
+                    </div>
+                </div>
+                <div class="profile-grid" style="margin-top:8px;">
+                    <div>
+                        <select name="property_type" id="field-property-type" class="field-input" required>
+                            <option value="">Тип объекта</option>
+                        </select>
+                    </div>
+                    <div>
+                        <select name="city" id="field-city" class="field-input" required onchange="onCityChange();">
+                            <option value="">Город</option>
+                        </select>
+                    </div>
+                    <div>
+                        <select name="district" id="field-district" class="field-input">
+                            <option value="">Район (опционально)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="profile-grid" style="margin-top:8px;">
+                    <div>
+                        <select name="deal_type" class="field-input" required>
+                            <option value="sale">Продажа</option>
+                            <option value="rent">Аренда</option>
+                        </select>
+                    </div>
+                    <div>
+                        <input type="number" name="area" class="field-input" placeholder="Площадь, м²" step="0.1" min="0">
+                    </div>
+                    <div>
+                        <input type="number" name="rooms" class="field-input" placeholder="Комнат" min="0">
+                    </div>
+                </div>
+                <div class="field" style="margin-top:8px;">
+                    <input type="text" name="address" class="field-input" placeholder="Адрес" required>
+                </div>
+                <div class="field" style="margin-top:8px;">
+                    <textarea name="description" class="field-input" rows="3" placeholder="Описание"></textarea>
+                </div>
+                <div class="field" style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+                    <label style="display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" name="is_featured">
+                        <span>Выделенный объект (показывать как рекомендованный)</span>
+                    </label>
+                </div>
+                <div class="profile-footer" style="justify-content:flex-start;margin-top:12px;">
+                    <button type="submit" class="nav-btn">Сохранить объект</button>
+                    <span id="create-property-status" class="muted" style="margin-left:12px;"></span>
+                </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div id="realtor-properties-root">
+            <div class="profile-title" style="margin-bottom:8px;font-size:18px;">Мои объекты</div>
+            <div id="realtor-properties-list" class="profile-list"></div>
+            <p id="realtor-properties-empty" class="muted" style="display:none;">
+                У вас пока нет объектов. Создайте первый с помощью формы выше.
+            </p>
+        </div>
+    </section>
+
+    <section id="tab-profile" class="profile-tab-panel" style="display:none;">
+        <div class="profile-grid">
+            <div>
+                <div class="field-label">Логин</div>
+                <div class="field-input" style="pointer-events:none;opacity:.75;">
+                    {{ realtor.user.username }}
+                </div>
+            </div>
+            <div>
+                <div class="field-label">E‑mail</div>
+                <div class="field-input" style="pointer-events:none;opacity:.75;">
+                    {{ realtor.user.email|default:"не указан" }}
+                </div>
+            </div>
+            {% if realtor.phone %}
+                <div>
+                    <div class="field-label">Телефон</div>
+                    <div class="field-input" style="pointer-events:none;opacity:.75;">
+                        {{ realtor.phone }}
+                    </div>
+                </div>
+            {% endif %}
+            {% if realtor.position %}
+                <div>
+                    <div class="field-label">Должность</div>
+                    <div class="field-input" style="pointer-events:none;opacity:.75;">
+                        {{ realtor.position }}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+        {% if realtor.bio %}
+            <div class="field" style="margin-top:16px;">
+                <div class="field-label">О себе</div>
+                <div class="field-input" style="min-height:60px;pointer-events:none;opacity:.75;">
+                    {{ realtor.bio }}
+                </div>
+            </div>
+        {% endif %}
+    </section>
+
+    <div class="profile-footer">
+        <div class="muted">
+            Перейти на витрину:<br>
+            <a href="http://localhost:5173/" class="nav-btn-secondary" style="padding:6px 10px;font-size:12px;">
+                Открыть сайт агентства
+            </a>
+        </div>
+        <a href="{% url 'logout-page' %}" class="nav-btn-secondary">Выйти</a>
+    </div>
+</section>
+
+<script>
+    function switchTab(event, id) {
+        event.preventDefault();
+        document.querySelectorAll('.profile-tab-panel').forEach(function (el) {
+            el.style.display = el.id === id ? 'block' : 'none';
+        });
+        document.querySelectorAll('.profile-tabs .tab-link').forEach(function (el) {
+            el.classList.toggle('active', el.getAttribute('href').slice(1) === id);
+        });
+    }
+
+    function openCreatePropertyModal() {
+        const modal = document.getElementById('create-property-modal');
+        if (modal) {
+            modal.style.display = 'block';
+        }
+    }
+
+    function closeCreatePropertyModal() {
+        const modal = document.getElementById('create-property-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    async function apiGet(path) {
+        const resp = await fetch(path, {
+            credentials: 'include',
+            headers: {'Accept': 'application/json'}
+        });
+        if (!resp.ok) {
+            throw new Error('Ошибка загрузки: ' + resp.status);
+        }
+        return await resp.json();
+    }
+
+    async function apiSend(path, method, bodyObj) {
+        const resp = await fetch(path, {
+            method: method,
+            credentials: 'include',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: bodyObj ? JSON.stringify(bodyObj) : null
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            const msg = data.detail || 'Ошибка ' + resp.status;
+            throw new Error(msg);
+        }
+        return data;
+    }
+
+    async function loadChoices() {
+        try {
+            const [types, cities] = await Promise.all([
+                apiGet('/api/property-types/'),
+                apiGet('/api/cities/')
+            ]);
+            const typeSelect = document.getElementById('field-property-type');
+            types.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = t.name;
+                typeSelect.appendChild(opt);
+            });
+
+            const citySelect = document.getElementById('field-city');
+            cities.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.name;
+                citySelect.appendChild(opt);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function onCityChange() {
+        const cityId = document.getElementById('field-city').value;
+        const districtSelect = document.getElementById('field-district');
+        districtSelect.innerHTML = '<option value=\"\">Район (опционально)</option>';
+        if (!cityId) {
+            return;
+        }
+        try {
+            const districts = await apiGet('/api/districts/?city=' + encodeURIComponent(cityId));
+            districts.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.id;
+                opt.textContent = d.name;
+                districtSelect.appendChild(opt);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function loadRealtorProperties() {
+        const list = document.getElementById('realtor-properties-list');
+        const emptyLabel = document.getElementById('realtor-properties-empty');
+        list.innerHTML = '';
+        try {
+            const data = await apiGet('/api/my/properties/');
+            if (!data.length) {
+                emptyLabel.style.display = 'block';
+                return;
+            }
+            emptyLabel.style.display = 'none';
+            data.forEach(p => {
+                const row = document.createElement('div');
+                row.className = 'profile-item';
+                row.innerHTML = `
+                    <div class="profile-item-main">
+                        <div class="profile-item-title">
+                            ${p.title} · ${p.price} ₽
+                        </div>
+                        <div class="profile-item-meta">
+                            ${p.city_name || ''} ${p.district_name ? '· ' + p.district_name : ''}
+                        </div>
+                        <div class="profile-item-extra">
+                            Площадь: ${p.area || '-'} м² · Комнат: ${p.rooms || '-'}
+                        </div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+                        <button type="button" class="nav-btn-secondary" onclick="promptAddImage(${p.id});">
+                            Фото
+                        </button>
+                        <button type="button" class="danger-btn" onclick="deleteProperty(${p.id});">
+                            Удалить
+                        </button>
+                    </div>
+                `;
+                list.appendChild(row);
+            });
+        } catch (e) {
+            console.error(e);
+            emptyLabel.style.display = 'block';
+            emptyLabel.textContent = 'Ошибка загрузки объектов: ' + e.message;
+        }
+    }
+
+    async function createProperty(event) {
+        event.preventDefault();
+        const form = event.target;
+        const statusEl = document.getElementById('create-property-status');
+        statusEl.textContent = 'Сохраняем...';
+        const formData = new FormData(form);
+        const payload = {
+            title: formData.get('title'),
+            price: formData.get('price'),
+            property_type: formData.get('property_type'),
+            city: formData.get('city'),
+            district: formData.get('district') || null,
+            deal_type: formData.get('deal_type'),
+            area: formData.get('area') || null,
+            rooms: formData.get('rooms') || null,
+            address: formData.get('address'),
+            description: formData.get('description') || '',
+            is_featured: formData.get('is_featured') === 'on',
+            status: 'active'
+        };
+        try {
+            await apiSend('/api/my/properties/', 'POST', payload);
+            form.reset();
+            statusEl.textContent = 'Объект создан.';
+            closeCreatePropertyModal();
+            loadRealtorProperties();
+        } catch (e) {
+            console.error(e);
+            statusEl.textContent = e.message;
+        }
+        return false;
+    }
+
+    async function promptAddImage(propertyId) {
+        const url = window.prompt('Введите URL фотографии (из интернета):');
+        if (!url) return;
+        try {
+            await apiSend('/api/property-images/', 'POST', {
+                property: propertyId,
+                image_url: url,
+                caption: ''
+            });
+            alert('Фотография добавлена.');
+        } catch (e) {
+            alert('Ошибка: ' + e.message);
+        }
+    }
+
+    async function deleteProperty(id) {
+        if (!window.confirm('Точно удалить этот объект?')) return;
+        try {
+            await apiSend('/api/my/properties/' + id + '/', 'DELETE');
+            loadRealtorProperties();
+        } catch (e) {
+            alert('Ошибка: ' + e.message);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        loadChoices();
+        loadRealtorProperties();
+    });
+</script>
+{% endblock %}
+

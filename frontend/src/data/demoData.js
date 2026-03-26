@@ -1,0 +1,189 @@
+export const demoPropertyTypes = [
+  { id: 1, name: 'Квартира' },
+  { id: 2, name: 'Дом' },
+  { id: 3, name: 'Коммерция' },
+  { id: 4, name: 'Участок' },
+]
+
+export const demoCities = [
+  { id: 1, name: 'Москва' },
+  { id: 2, name: 'Санкт-Петербург' },
+  { id: 3, name: 'Казань' },
+]
+
+export const demoProperties = [
+  {
+    id: 1,
+    title: '2-комнатная квартира в центре',
+    property_type: 1,
+    property_type_name: 'Квартира',
+    city: 1,
+    city_name: 'Москва',
+    district: 11,
+    district_name: 'Центральный',
+    deal_type: 'sale',
+    status: 'active',
+    price: 18500000,
+    area: 64,
+    rooms: 2,
+    floor: 7,
+    total_floors: 12,
+    address: 'ул. Тверская, 7',
+    description: 'Светлая квартира в центре Москвы, рядом метро, парк и вся инфраструктура.',
+    latitude: 55.7577,
+    longitude: 37.6156,
+    is_featured: true,
+    images: [
+      {
+        image_url:
+          'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=900&q=80',
+      },
+    ],
+  },
+  {
+    id: 2,
+    title: 'Офисный блок в деловом квартале',
+    property_type: 3,
+    property_type_name: 'Коммерция',
+    city: 2,
+    city_name: 'Санкт-Петербург',
+    district: 21,
+    district_name: 'Петроградский',
+    deal_type: 'rent',
+    status: 'active',
+    price: 780000,
+    area: 88,
+    rooms: 3,
+    floor: 9,
+    total_floors: 18,
+    address: 'Большой проспект П.С., 55',
+    description: 'Подойдёт под IT-команду, сервис или представительство компании.',
+    latitude: 59.965,
+    longitude: 30.311,
+    is_featured: false,
+    images: [
+      {
+        image_url:
+          'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',
+      },
+    ],
+  },
+  {
+    id: 3,
+    title: 'Дом с участком и террасой',
+    property_type: 2,
+    property_type_name: 'Дом',
+    city: 3,
+    city_name: 'Казань',
+    district: 31,
+    district_name: 'Советский',
+    deal_type: 'sale',
+    status: 'active',
+    price: 52000000,
+    area: 140,
+    rooms: 5,
+    floor: null,
+    total_floors: null,
+    address: 'садовое товарищество у озера',
+    description: 'Большой семейный дом с участком, гаражом и террасой.',
+    latitude: 55.865,
+    longitude: 49.08,
+    is_featured: true,
+    images: [
+      {
+        image_url:
+          'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=900&q=80',
+      },
+    ],
+  },
+  {
+    id: 4,
+    title: 'Студия рядом с набережной',
+    property_type: 1,
+    property_type_name: 'Квартира',
+    city: 1,
+    city_name: 'Москва',
+    district: 12,
+    district_name: 'Хамовники',
+    deal_type: 'rent',
+    status: 'reserved',
+    price: 450000,
+    area: 38,
+    rooms: 1,
+    floor: 15,
+    total_floors: 18,
+    address: 'Фрунзенская набережная, 15',
+    description: 'Современная студия с новой мебелью, видом на набережную и быстрым интернетом.',
+    latitude: 55.7264,
+    longitude: 37.5786,
+    is_featured: false,
+    images: [
+      {
+        image_url:
+          'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=900&q=80',
+      },
+    ],
+  },
+  {
+    id: 5,
+    title: 'Торговое помещение на первой линии',
+    property_type: 3,
+    property_type_name: 'Коммерция',
+    city: 2,
+    city_name: 'Санкт-Петербург',
+    district: 22,
+    district_name: 'Адмиралтейский',
+    deal_type: 'sale',
+    status: 'active',
+    price: 87500000,
+    area: 210,
+    rooms: null,
+    floor: 1,
+    total_floors: 9,
+    address: 'Невский проспект, 48',
+    description: 'Готовое торговое помещение на первой линии под магазин, шоурум или кофейню.',
+    latitude: 59.9322,
+    longitude: 30.3466,
+    is_featured: false,
+    images: [
+      {
+        image_url:
+          'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=80',
+      },
+    ],
+  },
+]
+
+export const demoAnalytics = {
+  supply: {
+    total_properties: 5,
+    active_properties: 4,
+    sale_properties: 3,
+    rent_properties: 2,
+    featured_properties: 2,
+  },
+  demand: {
+    total_inquiries: 27,
+    new_inquiries: 12,
+    in_progress_inquiries: 7,
+  },
+  average: {
+    price: 29690000,
+    area: 108,
+  },
+  by_city: [
+    { city__name: 'Москва', count: 2 },
+    { city__name: 'Санкт-Петербург', count: 2 },
+    { city__name: 'Казань', count: 1 },
+  ],
+  by_property_type: [
+    { property_type__name: 'Квартира', count: 2 },
+    { property_type__name: 'Коммерция', count: 2 },
+    { property_type__name: 'Дом', count: 1 },
+  ],
+  inquiries_by_city: [
+    { city__name: 'Алматы', count: 13 },
+    { city__name: 'Астана', count: 9 },
+    { city__name: 'Шымкент', count: 5 },
+  ],
+}

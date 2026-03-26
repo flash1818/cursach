@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Регистрация · RealEstate{% endblock %}
+
+{% block content %}
+<section class="card-centered">
+    <header style="margin-bottom:16px;">
+        <div class="auth-title">Регистрация</div>
+        <div class="auth-subtitle">
+            Создайте профиль клиента, чтобы сохранять избранное и следить за сделками.
+        </div>
+    </header>
+
+    {% if errors %}
+        <ul class="error-list">
+            {% for err in errors %}
+                <li>{{ err }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <form method="post" class="form-grid" novalidate>
+        {% csrf_token %}
+
+        <div class="field">
+            <div class="field-label">Имя и фамилия</div>
+            <div class="profile-grid">
+                <input type="text" name="first_name" class="field-input"
+                       placeholder="Имя"
+                       value="{{ form_data.first_name|default:'' }}">
+                <input type="text" name="last_name" class="field-input"
+                       placeholder="Фамилия"
+                       value="{{ form_data.last_name|default:'' }}">
+            </div>
+        </div>
+
+        <div class="field">
+            <div class="field-label">Логин</div>
+            <input type="text" name="username" class="field-input"
+                   value="{{ form_data.username|default:'' }}">
+        </div>
+
+        <div class="field">
+            <div class="field-label">E‑mail</div>
+            <input type="email" name="email" class="field-input"
+                   value="{{ form_data.email|default:'' }}">
+        </div>
+
+        <div class="profile-grid">
+            <div>
+                <div class="field-label">Тип аккаунта</div>
+                <input type="text" class="field-input" value="Клиент" disabled>
+                <input type="hidden" name="role" value="client">
+            </div>
+            <div>
+                <div class="field-label">Телефон</div>
+                <input type="text" name="phone" class="field-input"
+                       placeholder="+7 ..."
+                       value="{{ form_data.phone|default:'' }}">
+            </div>
+        </div>
+
+        <div class="field">
+            <div class="field-label">Пароль</div>
+            <input type="password" name="password" class="field-input">
+        </div>
+
+        <div class="profile-footer" style="align-items:center;">
+            <button type="submit" class="nav-btn">Создать аккаунт</button>
+            <div class="muted" style="display:flex;align-items:center;gap:6px;">
+                <span>Уже есть аккаунт?</span>
+                <a href="{% url 'login-page' %}" class="nav-btn-secondary"
+                   style="padding:4px 10px;font-size:12px;text-decoration:none;">
+                    Войти
+                </a>
+            </div>
+        </div>
+    </form>
+</section>
+{% endblock %}
+

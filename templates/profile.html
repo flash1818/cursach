@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Профиль · RealEstate{% endblock %}
+
+{% block content %}
+<section class="profile-shell">
+    <header class="profile-header">
+        <div>
+            <div class="profile-title">Профиль</div>
+            <div class="profile-subtitle">
+                {{ user.get_full_name|default:user.username }} · {{ role_display }}
+            </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <span class="badge">
+                Избранные: {{ favorites|length }} · Сделки: {{ deals|length }} ·
+                Уведомления: {{ notifications|length }}
+            </span>
+            <span class="muted" style="font-size:11px;">Данные берутся из API и базы PostgreSQL</span>
+        </div>
+    </header>
+
+    <nav class="profile-tabs">
+        <a href="#tab-profile" class="tab-link active" onclick="switchTab(event, 'tab-profile')">Профиль</a>
+        <a href="#tab-favorites" class="tab-link" onclick="switchTab(event, 'tab-favorites')">
+            Избранное ({{ favorites|length }})
+        </a>
+        <a href="#tab-deals" class="tab-link" onclick="switchTab(event, 'tab-deals')">
+            Сделки ({{ deals|length }})
+        </a>
+        <a href="#tab-notifications" class="tab-link" onclick="switchTab(event, 'tab-notifications')">
+            Уведомления ({{ notifications|length }})
+        </a>
+    </nav>
+
+    <div class="divider"></div>
+
+    <section id="tab-profile" class="profile-tab-panel" style="display:block;">
+        <div class="profile-grid">
+            <div>
+                <div class="field-label">Логин</div>
+                <div class="field-input" style="pointer-events:none;opacity:.75;">
+                    {{ user.username }}
+                </div>
+            </div>
+            <div>
+                <div class="field-label">E‑mail</div>
+                <div class="field-input" style="pointer-events:none;opacity:.75;">
+                    {{ user.email|default:"не указан" }}
+                </div>
+            </div>
+            {% if phone %}
+                <div>
+                    <div class="field-label">Телефон</div>
+                    <div class="field-input" style="pointer-events:none;opacity:.75;">
+                        {{ phone }}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <section id="tab-favorites" class="profile-tab-panel" style="display:none;">
+        {% if favorites %}
+            <div class="profile-list">
+                {% for fav in favorites %}
+                    <div class="profile-item">
+                        <div class="profile-item-main">
+                            <div class="profile-item-title">
+                                {{ fav.property.title }}
+                            </div>
+                            <div class="profile-item-meta">
+                                {{ fav.property.city.name }}
+                                {% if fav.property.district %}
+                                    · {{ fav.property.district.name }}
+                                {% endif %}
+                            </div>
+                            <div class="profile-item-extra">
+                                {{ fav.property.price }} ₽ · {{ fav.property.area }} м²
+                            </div>
+                        </div>
+                        <form method="post" style="margin:0;">
+                            {% csrf_token %}
+                            <input type="hidden" name="favorite_id" value="{{ fav.id }}">
+                            <button type="submit" name="remove_favorite" class="danger-btn">
+                                Удалить
+                            </button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">Пока нет избранных объектов.</p>
+        {% endif %}
+    </section>
+
+    <section id="tab-deals" class="profile-tab-panel" style="display:none;">
+        {% if deals %}
+            <div class="profile-list">
+                {% for deal in deals %}
+                    <div class="profile-item">
+                        <div class="profile-item-main">
+                            <div class="profile-item-title">
+                                {{ deal.property.title }}
+                            </div>
+                            <div class="profile-item-meta">
+                                {{ deal.property.city.name }} ·
+                                Тип: {{ deal.get_deal_type_display }} · Статус: {{ deal.get_status_display }}
+                            </div>
+                            <div class="profile-item-extra">
+                                Сумма: {{ deal.price }} ₽
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">Сделок пока нет.</p>
+        {% endif %}
+    </section>
+
+    <section id="tab-notifications" class="profile-tab-panel" style="display:none;">
+        {% if notifications %}
+            <div class="profile-list">
+                {% for note in notifications %}
+                    <div class="profile-item">
+                        <div class="profile-item-main">
+                            <div class="profile-item-title">
+                                {{ note.title }}
+                            </div>
+                            <div class="profile-item-meta">
+                                {{ note.created_at|date:"d.m.Y H:i" }}
+                                {% if note.related_property %}
+                                    · {{ note.related_property.title }}
+                                {% endif %}
+                            </div>
+                            <div class="profile-item-extra">
+                                {{ note.body }}
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">Уведомлений пока нет.</p>
+        {% endif %}
+    </section>
+
+    <div class="profile-footer">
+        <div class="muted">
+            Перейти на витрину:<br>
+            <a href="http://localhost:5173/" class="nav-btn-secondary" style="padding:6px 10px;font-size:12px;">
+                Открыть сайт агентства
+            </a>
+        </div>
+        <a href="{% url 'logout-page' %}" class="nav-btn-secondary">Выйти</a>
+    </div>
+</section>
+
+<script>
+    function switchTab(event, id) {
+        event.preventDefault();
+        document.querySelectorAll('.profile-tab-panel').forEach(function (el) {
+            el.style.display = el.id === id ? 'block' : 'none';
+        });
+        document.querySelectorAll('.profile-tabs .tab-link').forEach(function (el) {
+            el.classList.toggle('active', el.getAttribute('href').slice(1) === id);
+        });
+    }
+</script>
+{% endblock %}
+
