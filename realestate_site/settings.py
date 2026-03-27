@@ -155,7 +155,15 @@ STATIC_URL = 'static/'
 if HAS_CORSHEADERS:
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:5173',
+        # GitHub Codespaces (фронтенд по HTTPS)
+        'https://*.github.dev',
     ]
     CORS_ALLOW_CREDENTIALS = True
+
+# Доверенные origin для форм (HTML-логин/регистрация)
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',
+    'https://*.github.dev',
+]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
