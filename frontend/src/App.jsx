@@ -435,11 +435,11 @@ function App() {
             </div>
             <div className="hero-gallery">
               <img
-                src="https://images.unsplash.com/photo-1505843513577-22bb7d21e455?auto=format&fit=crop&w=900&q=80"
+                src="https://images.unsplash.com/photo-1505842679540-5f762e06a1a3?auto=format&fit=crop&w=900&q=80"
                 alt="Современный жилой комплекс"
               />
               <img
-                src="https://images.unsplash.com/photo-1529424301806-4be0bb154e3b?auto=format&fit=crop&w=900&q=80"
+                src="https://images.unsplash.com/photo-1483478550801-ceba5fe50e8e?auto=format&fit=crop&w=900&q=80"
                 alt="Офисный центр"
               />
             </div>
@@ -931,6 +931,18 @@ function App() {
                     )}
                   </MapContainer>
                 </div>
+                {Array.isArray(detailsProperty.images) && detailsProperty.images.length > 1 && (
+                  <div className="details-gallery">
+                    {detailsProperty.images.slice(1, 3).map((image) => (
+                      <img
+                        key={image.id || image.image_url}
+                        src={image.image_url}
+                        alt={image.caption || detailsProperty.title}
+                        className="details-gallery-image"
+                      />
+                    ))}
+                  </div>
+                )}
               </aside>
             </div>
           </div>

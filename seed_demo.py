@@ -64,7 +64,11 @@ def main():
             "latitude": 55.7577,
             "longitude": 37.6156,
             "is_featured": True,
-            "image_url": "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=900&q=80",
+            "image_urls": [
+                "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=900&q=80",
+            ],
         },
         {
             "title": "Офисный блок в деловом квартале",
@@ -83,7 +87,11 @@ def main():
             "latitude": 59.965,
             "longitude": 30.311,
             "is_featured": False,
-            "image_url": "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80",
+            "image_urls": [
+                "https://images.unsplash.com/photo-1529424301806-4be0bb154e3b?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1483478550801-ceba5fe50e8e?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=900&q=80",
+            ],
         },
         {
             "title": "Дом с участком и террасой",
@@ -102,7 +110,11 @@ def main():
             "latitude": 55.865,
             "longitude": 49.08,
             "is_featured": True,
-            "image_url": "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=900&q=80",
+            "image_urls": [
+                "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1600607687920-4e2a5345c9a5?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1600585154340-0ef3c08c0632?auto=format&fit=crop&w=900&q=80",
+            ],
         },
         {
             "title": "Студия рядом с набережной",
@@ -121,7 +133,11 @@ def main():
             "latitude": 55.7264,
             "longitude": 37.5786,
             "is_featured": False,
-            "image_url": "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=900&q=80",
+            "image_urls": [
+                "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1523755231516-e43fd2e8dca5?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1505691723518-36a5ac3be353?auto=format&fit=crop&w=900&q=80",
+            ],
         },
         {
             "title": "Торговое помещение на первой линии",
@@ -140,22 +156,27 @@ def main():
             "latitude": 59.9322,
             "longitude": 30.3466,
             "is_featured": False,
-            "image_url": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=80",
+            "image_urls": [
+                "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
+                "https://images.unsplash.com/photo-1529429617124-aee63a28bd55?auto=format&fit=crop&w=900&q=80",
+            ],
         },
     ]
 
     for item in properties:
-        image_url = item.pop("image_url")
+        image_urls = item.pop("image_urls")
         prop, _ = Property.objects.update_or_create(title=item["title"], defaults=item)
         # Все демо-объекты привязаны к единственному риэлтору
         if prop.realtor_id != realtor_profile.id:
             prop.realtor = realtor_profile
             prop.save(update_fields=["realtor"])
-        PropertyImage.objects.update_or_create(
-            property=prop,
-            image_url=image_url,
-            defaults={"caption": prop.title},
-        )
+        for idx, url in enumerate(image_urls):
+            PropertyImage.objects.update_or_create(
+                property=prop,
+                image_url=url,
+                defaults={"caption": f"{prop.title} · фото {idx + 1}"},
+            )
 
     LeadInquiry.objects.update_or_create(
         full_name="Анна Серова",
