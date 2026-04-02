@@ -1,48 +1,39 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "ROOT=%CD%"
 
-if not exist "%~dp0venv\Scripts\python.exe" (
-    echo ERROR: No venv. Double-click INSTALL_USB.BAT first.
+if not exist "%ROOT%\venv\Scripts\python.exe" (
+    echo ERROR: Run INSTALL.BAT first.
     pause
     exit /b 1
 )
 
-if not exist "%~dp0frontend\node_modules" (
-    echo ERROR: No frontend\node_modules. Double-click INSTALL_USB.BAT first.
+if not exist "%ROOT%\frontend\node_modules" (
+    echo ERROR: Run INSTALL.BAT first (npm).
     pause
     exit /b 1
 )
 
-"%~dp0venv\Scripts\python.exe" -c "import django" 1>nul 2>&1
+"%ROOT%\venv\Scripts\python.exe" -c "import django" 1>nul 2>&1
 if errorlevel 1 (
-    echo Django missing - installing from requirements.txt ...
-    echo Need internet for pip. Wait...
-    "%~dp0venv\Scripts\python.exe" -m pip install --upgrade pip
-    "%~dp0venv\Scripts\python.exe" -m pip install --default-timeout=120 -r "%~dp0requirements.txt"
+    echo Django missing - pip install...
+    "%ROOT%\venv\Scripts\python.exe" -m pip install --default-timeout=120 -r "%ROOT%\requirements.txt"
     if errorlevel 1 (
-        echo ERROR: pip failed. Run INSTALL_USB.BAT or check internet.
+        echo ERROR: Run INSTALL.BAT
         pause
         exit /b 1
     )
-    "%~dp0venv\Scripts\python.exe" -c "import django" 1>nul 2>&1
-    if errorlevel 1 (
-        echo ERROR: Django still missing after pip. Run INSTALL_USB.BAT.
-        pause
-        exit /b 1
-    )
-    echo OK - Django installed.
-    echo.
 )
 
-echo Starting backend :8000 ...
-start "RealEstate-Backend" "%~dp0_run_backend_usb.bat"
+echo Backend :8000
+start "RealEstate-Backend" cmd /k cd /d "%ROOT%" ^&^& set USE_POSTGRES=0 ^&^& set PGCLIENTENCODING=UTF8 ^&^& "%ROOT%\venv\Scripts\python.exe" -u "%ROOT%\manage.py" runserver 0.0.0.0:8000
 
-echo Starting frontend :5173 ...
-start "RealEstate-Frontend" "%~dp0_run_frontend_usb.bat"
+echo Frontend :5173
+start "RealEstate-Frontend" cmd /k cd /d "%ROOT%\frontend" ^&^& npm run dev -- --host 0.0.0.0 --port 5173
 
 echo.
-echo Open in browser: http://localhost:5173
+echo Browser: http://localhost:5173
 echo.
 pause
 endlocal
