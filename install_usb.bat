@@ -1,85 +1,91 @@
 @echo off
-setlocal EnableExtensions
+setlocal
 cd /d "%~dp0"
-
-echo.
-echo === Real Estate Pro - install (USB / local PC) ===
-echo Folder: %cd%
-echo.
-
-where python 1>nul 2>nul
-if errorlevel 1 (
-  echo ERROR: Python not in PATH. Install from python.org - enable Add to PATH.
-  pause
-  exit /b 1
-)
-
-where node 1>nul 2>nul
-if errorlevel 1 (
-  echo ERROR: Node.js not in PATH. Install LTS from nodejs.org
-  pause
-  exit /b 1
-)
-
-echo Step 1 - versions:
-python --version
-node -v
-npm -v
-echo.
-
-if not exist "venv\Scripts\python.exe" (
-  echo Step 2 - creating venv...
-  python -m venv venv
-  if errorlevel 1 (
-    echo ERROR: venv failed. Try: py -3.12 -m venv venv
-    pause
-    exit /b 1
-  )
-) else (
-  echo Step 2 - venv exists, skip create.
-)
-
-echo Step 3 - pip install...
-call "%~dp0venv\Scripts\activate.bat"
-python -m pip install --upgrade pip
-pip install --default-timeout=120 -r requirements.txt
-if errorlevel 1 (
-  echo ERROR: pip install failed. Check internet.
-  pause
-  exit /b 1
-)
-
-echo Step 4 - npm install...
-pushd "%~dp0frontend"
-call npm install
-if errorlevel 1 (
-  echo ERROR: npm install failed.
-  popd
-  pause
-  exit /b 1
-)
-popd
-
-cd /d "%~dp0"
-echo Step 5 - migrate...
-call "%~dp0venv\Scripts\activate.bat"
-python manage.py migrate
-if errorlevel 1 (
-  echo ERROR: migrate failed.
-  pause
-  exit /b 1
-)
-
-echo Step 6 - seed demo data...
-python seed_demo.py
-if errorlevel 1 (
-  echo WARNING: seed_demo failed, you can run it later manually.
-)
 
 echo.
 echo ========================================
-echo DONE. Next: double-click start_usb.bat
-echo Site: http://localhost:5173
+echo   Real Estate Pro - INSTALL
+echo ========================================
+echo   Folder: %CD%
+echo ========================================
+echo.
+
+where python >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Python not found. Add Python to PATH.
+    pause
+    exit /b 1
+)
+
+where node >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Node.js not found.
+    pause
+    exit /b 1
+)
+
+python --version
+node -v
+echo.
+
+if exist "%~dp0venv\Scripts\python.exe" goto HAVE_VENV
+
+echo Creating venv...
+python -m venv "%~dp0venv"
+if errorlevel 1 (
+    echo ERROR: Cannot create venv.
+    pause
+    exit /b 1
+)
+
+:HAVE_VENV
+echo Upgrading pip...
+"%~dp0venv\Scripts\python.exe" -m pip install --upgrade pip
+if errorlevel 1 (
+    echo ERROR: pip upgrade failed.
+    pause
+    exit /b 1
+)
+
+echo Installing requirements.txt ...
+"%~dp0venv\Scripts\python.exe" -m pip install --default-timeout=120 -r "%~dp0requirements.txt"
+if errorlevel 1 (
+    echo ERROR: pip install failed.
+    pause
+    exit /b 1
+)
+
+echo npm install in frontend ...
+cd /d "%~dp0frontend"
+if errorlevel 1 (
+    echo ERROR: No frontend folder.
+    pause
+    exit /b 1
+)
+call npm install
+if errorlevel 1 (
+    echo ERROR: npm install failed.
+    cd /d "%~dp0"
+    pause
+    exit /b 1
+)
+
+cd /d "%~dp0"
+echo migrate...
+"%~dp0venv\Scripts\python.exe" "%~dp0manage.py" migrate
+if errorlevel 1 (
+    echo ERROR: migrate failed.
+    pause
+    exit /b 1
+)
+
+echo seed_demo...
+"%~dp0venv\Scripts\python.exe" "%~dp0seed_demo.py"
+
+echo.
+echo ========================================
+echo   OK. Run START_USB.BAT
+echo   Browser: http://localhost:5173
 echo ========================================
 echo.
 pause
