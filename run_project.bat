@@ -3,22 +3,36 @@ setlocal
 cd /d "%~dp0"
 
 if not exist "%~dp0venv\Scripts\python.exe" (
-    echo ERROR: Run INSTALL_USB.BAT first.
+    echo ERROR: No venv. Double-click INSTALL_USB.BAT first.
     pause
     exit /b 1
 )
 
 if not exist "%~dp0frontend\node_modules" (
-    echo ERROR: Run INSTALL_USB.BAT first - npm missing.
+    echo ERROR: No frontend\node_modules. Double-click INSTALL_USB.BAT first.
     pause
     exit /b 1
 )
 
 "%~dp0venv\Scripts\python.exe" -c "import django" 1>nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Run INSTALL_USB.BAT first - django missing.
-    pause
-    exit /b 1
+    echo Django missing - installing from requirements.txt ...
+    echo Need internet for pip. Wait...
+    "%~dp0venv\Scripts\python.exe" -m pip install --upgrade pip
+    "%~dp0venv\Scripts\python.exe" -m pip install --default-timeout=120 -r "%~dp0requirements.txt"
+    if errorlevel 1 (
+        echo ERROR: pip failed. Run INSTALL_USB.BAT or check internet.
+        pause
+        exit /b 1
+    )
+    "%~dp0venv\Scripts\python.exe" -c "import django" 1>nul 2>&1
+    if errorlevel 1 (
+        echo ERROR: Django still missing after pip. Run INSTALL_USB.BAT.
+        pause
+        exit /b 1
+    )
+    echo OK - Django installed.
+    echo.
 )
 
 echo Starting backend :8000 ...
