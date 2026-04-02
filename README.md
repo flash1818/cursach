@@ -16,16 +16,14 @@
 | Файл | Назначение |
 |------|------------|
 | **`install_usb.bat`** | Создаёт `venv`, ставит зависимости (`pip`, `npm`), `migrate`, `seed_demo` |
-| **`start_usb.bat`** | Запускает Django и Vite (база **SQLite**, без PostgreSQL) |
+| **`run_project.bat`** | Запускает Django и Vite (база **SQLite**, два окна) |
 
 Порядок:
 1. Скопируйте папку проекта на флешку / на диск.
 2. Дважды щёлкните **`install_usb.bat`** (дождитесь «Готово»).
-3. Когда нужно работать с проектом — **`start_usb.bat`**.
+3. Когда нужно работать с проектом — **`run_project.bat`**.
 
 Сообщения в батниках на **английском** специально: так `cmd.exe` на русской Windows не ломает разбор файла из‑за UTF‑8/кириллицы.
-
-**`run_project.bat`** делает то же, что **`start_usb.bat`** (два окна: Django + Vite), без вызова другого батника.
 
 ### Если что-то пошло не так
 
@@ -67,7 +65,7 @@ npm run dev -- --host 0.0.0.0 --port 5173
 
 ## База данных
 
-- **По умолчанию** (в т.ч. `start_usb.bat`): **SQLite**, файл `db.sqlite3` в корне.
+- **По умолчанию** (в т.ч. `run_project.bat`): **SQLite**, файл `db.sqlite3` в корне.
 - **PostgreSQL:** задайте `USE_POSTGRES=1` и переменные `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, затем `migrate`.
 
 ---

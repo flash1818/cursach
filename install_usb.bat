@@ -84,7 +84,7 @@ echo seed_demo...
 
 echo.
 echo ========================================
-echo   OK. Run START_USB.BAT
+echo   OK. Run RUN_PROJECT.BAT
 echo   Browser: http://localhost:5173
 echo ========================================
 echo.
