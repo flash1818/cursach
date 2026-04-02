@@ -1,43 +1,34 @@
 @echo off
-chcp 65001 >nul
 setlocal EnableExtensions
-
-REM Запуск backend + frontend (после install_usb.bat). SQLite по умолчанию.
-
-set "ROOT=%~dp0"
-cd /d "%ROOT%"
+cd /d "%~dp0"
 
 if not exist "venv\Scripts\python.exe" (
-  echo Сначала выполните install_usb.bat — нет папки venv.
+  echo ERROR: Run install_usb.bat first (no venv folder).
   pause
   exit /b 1
 )
 
-venv\Scripts\python.exe -c "import django" >nul 2>nul
+venv\Scripts\python.exe -c "import django" 1>nul 2>nul
 if errorlevel 1 (
-  echo Django не установлен. Запустите install_usb.bat
+  echo ERROR: Django missing. Run install_usb.bat
   pause
   exit /b 1
 )
 
 if not exist "frontend\node_modules" (
-  echo Нет frontend\node_modules. Запустите install_usb.bat
+  echo ERROR: Run install_usb.bat (no frontend\node_modules).
   pause
   exit /b 1
 )
 
-set USE_POSTGRES=0
-set PGCLIENTENCODING=UTF8
+echo Starting backend http://localhost:8000
+start "Django" cmd /k call "%~dp0_run_backend_usb.bat"
 
-echo [1/2] Backend: http://localhost:8000
-start "Django" cmd /k pushd "%ROOT%" ^&^& venv\Scripts\python.exe -u manage.py runserver 0.0.0.0:8000
-
-echo [2/2] Frontend: http://localhost:5173
-start "Vite" cmd /k pushd "%ROOT%frontend" ^&^& npm run dev -- --host 0.0.0.0 --port 5173
+echo Starting frontend http://localhost:5173
+start "Vite" cmd /k call "%~dp0_run_frontend_usb.bat"
 
 echo.
-echo Окна серверов открыты. Это окно можно закрыть.
-echo Браузер: http://localhost:5173
+echo Two windows opened. Open browser: http://localhost:5173
 echo.
 pause
 endlocal
