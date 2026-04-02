@@ -43,9 +43,10 @@ const fetchJson = async (url) => {
   }
 }
 
-const getPreviewImage = (property) =>
-  property?.images?.[0]?.image_url ||
+const PLACEHOLDER_IMG =
   'https://images.unsplash.com/photo-1560185007-cde436f6a4d0?auto=format&fit=crop&w=900&q=80'
+
+const getPreviewImage = (property) => property?.images?.[0]?.image_url || PLACEHOLDER_IMG
 
 const getTypeLabel = (property, types) => {
   if (property?.property_type_name) return property.property_type_name
@@ -135,6 +136,7 @@ function App() {
   const [detailsProperty, setDetailsProperty] = useState(null)
   const [activeView, setActiveView] = useState('home')
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const [companyGallery, setCompanyGallery] = useState([])
 
   // если пользователь разлогинился, очищаем избранное
   useEffect(() => {
@@ -162,12 +164,13 @@ function App() {
     let isMounted = true
 
     const loadData = async () => {
-      const [properties, cities, types, analytics, me] = await Promise.all([
+      const [properties, cities, types, analytics, me, gallery] = await Promise.all([
         fetchJson(`${API_BASE}/properties/`),
         fetchJson(`${API_BASE}/cities/`),
         fetchJson(`${API_BASE}/property-types/`),
         fetchJson(`${API_BASE}/analytics/`),
         fetchJson(`${API_BASE}/auth/me/`),
+        fetchJson(`${API_BASE}/company-gallery/`),
       ])
 
       if (!isMounted) {
@@ -183,6 +186,7 @@ function App() {
       setRemoteTypes(safeTypes)
       setRemoteAnalytics(analytics)
       setCurrentUser(me && me.id ? me : null)
+      setCompanyGallery(Array.isArray(gallery) ? gallery : [])
 
       if (me && me.id && isMounted) {
         const favs = (await fetchJson(`${API_BASE}/favorites/`)) || []
@@ -193,7 +197,7 @@ function App() {
       }
 
       if (!safeProperties.length) {
-        setNotice('Пока нет записей в PostgreSQL, поэтому показаны демо-объекты.')
+        setNotice('Пока нет объектов в каталоге — показаны демонстрационные примеры.')
       }
 
       setLoading(false)
@@ -360,7 +364,8 @@ function App() {
           <p className="eyebrow">Агентство недвижимости</p>
           <h1>Real Estate Pro</h1>
           <p className="subtitle">
-            Современная витрина объектов, аналитика рынка и CRM-контур для работы с клиентами.
+            Подбор жилой и коммерческой недвижимости, прозрачные условия и сопровождение на всех этапах
+            сделки.
           </p>
         </div>
 
@@ -387,7 +392,7 @@ function App() {
             Аналитика
           </button>
           <span className={`status-pill ${remoteProperties.length ? 'live' : 'demo'}`}>
-            {remoteProperties.length ? 'Данные из PostgreSQL' : 'Демо-режим'}
+            {remoteProperties.length ? 'Каталог на сайте' : 'Демо-данные'}
           </span>
           {currentUser ? (
             <a
@@ -403,7 +408,7 @@ function App() {
               href={backendHref('/auth/login/')}
               rel="noreferrer"
             >
-              Войти в CRM
+              Войти
             </a>
           )}
         </nav>
@@ -417,31 +422,42 @@ function App() {
           <div className="section-head">
             <div>
               <p className="section-label">О компании</p>
-              <h2>Real Estate Pro — цифровое агентство</h2>
+              <h2>Real Estate Pro</h2>
             </div>
           </div>
 
           <div className="hero-intro-grid">
             <div className="hero-copy">
               <p>
-                Мы соединяем владельцев недвижимости и покупателей через прозрачную витрину объектов,
-                умные фильтры и живую аналитику рынка. Система построена на Django, React и PostgreSQL —
-                надёжный стек для реальных сделок.
+                Мы помогаем клиентам купить, продать или снять недвижимость: от первого звонка до
+                передачи ключей. Работаем с жилыми и коммерческими объектами, подбираем варианты под
+                ваш бюджет и задачи.
               </p>
               <p>
-                На этой странице вы можете посмотреть актуальные объекты, их расположение на карте и
-                динамику рынка по городам и типам недвижимости.
+                Ниже — актуальные предложения, карта расположения объектов и обзор рынка по городам и
+                типам недвижимости.
               </p>
             </div>
             <div className="hero-gallery">
-              <img
-                src="https://images.unsplash.com/photo-1505842679540-5f762e06a1a3?auto=format&fit=crop&w=900&q=80"
-                alt="Современный жилой комплекс"
-              />
-              <img
-                src="https://images.unsplash.com/photo-1483478550801-ceba5fe50e8e?auto=format&fit=crop&w=900&q=80"
-                alt="Офисный центр"
-              />
+              <p className="section-label" style={{ margin: '0 0 8px' }}>
+                Фотографии агентства
+              </p>
+              {companyGallery.length ? (
+                companyGallery.map((item) => (
+                  <figure key={item.id} className="hero-gallery-figure">
+                    <img src={item.image_url} alt={item.caption || 'Фото агентства'} />
+                    {item.caption ? <figcaption>{item.caption}</figcaption> : null}
+                  </figure>
+                ))
+              ) : (
+                <>
+                  <img src={PLACEHOLDER_IMG} alt="Недвижимость" />
+                  <img
+                    src="https://images.unsplash.com/photo-1483478550801-ceba5fe50e8e?auto=format&fit=crop&w=900&q=80"
+                    alt="Объект"
+                  />
+                </>
+              )}
             </div>
           </div>
 
@@ -466,8 +482,8 @@ function App() {
               <strong>{averageArea} м²</strong>
             </div>
             <div className="metric-chip">
-              <span>Подключение</span>
-              <strong>{loading ? 'Загрузка...' : 'Готово'}</strong>
+              <span>Каталог</span>
+              <strong>{loading ? 'Загрузка...' : 'Обновлён'}</strong>
             </div>
           </div>
         </section>
@@ -617,7 +633,7 @@ function App() {
 
             <div className="cards-grid">
               {loading ? (
-                <div className="empty-state">Загружаем данные из API...</div>
+                <div className="empty-state">Загружаем каталог...</div>
               ) : filteredProperties.length ? (
                 filteredProperties.map((property) => {
                   const isSelected = selectedProperty?.id === property.id
@@ -690,7 +706,7 @@ function App() {
           <div className="section-head compact">
             <div>
               <p className="section-label">Карта</p>
-              <h2>Интеграция с Leaflet</h2>
+              <h2>Расположение объектов</h2>
             </div>
             <span className="result-count">
               {selectedProperty ? selectedProperty.title : 'Нет объекта'}
@@ -844,6 +860,27 @@ function App() {
 
             <div className="details-modal-grid">
               <div className="details-main">
+                {Array.isArray(detailsProperty.images) && detailsProperty.images.length > 0 && (
+                  <div className="details-photos-top">
+                    <img
+                      className="details-photo-main"
+                      src={detailsProperty.images[0].image_url || PLACEHOLDER_IMG}
+                      alt={detailsProperty.title}
+                    />
+                    {detailsProperty.images.length > 1 && (
+                      <div className="details-gallery-grid">
+                        {detailsProperty.images.slice(1).map((img) => (
+                          <img
+                            key={img.id || img.image_url}
+                            src={img.image_url || PLACEHOLDER_IMG}
+                            alt={img.caption || detailsProperty.title}
+                            className="details-gallery-thumb"
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <p className="details-description">{detailsProperty.description}</p>
 
                 <div className="details-metro">
@@ -931,18 +968,6 @@ function App() {
                     )}
                   </MapContainer>
                 </div>
-                {Array.isArray(detailsProperty.images) && detailsProperty.images.length > 1 && (
-                  <div className="details-gallery">
-                    {detailsProperty.images.slice(1, 3).map((image) => (
-                      <img
-                        key={image.id || image.image_url}
-                        src={image.image_url}
-                        alt={image.caption || detailsProperty.title}
-                        className="details-gallery-image"
-                      />
-                    ))}
-                  </div>
-                )}
               </aside>
             </div>
           </div>

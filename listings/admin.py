@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import City, District, LeadInquiry, Property, PropertyImage, PropertyType
+from .models import City, CompanyGalleryImage, District, LeadInquiry, Property, PropertyImage, PropertyType
 
 
 @admin.register(PropertyType)
@@ -24,7 +24,8 @@ class DistrictAdmin(admin.ModelAdmin):
 
 class PropertyImageInline(admin.TabularInline):
     model = PropertyImage
-    extra = 1
+    extra = 0
+    fields = ("image", "caption")
 
 
 @admin.register(Property)
@@ -49,9 +50,16 @@ class PropertyAdmin(admin.ModelAdmin):
 
 @admin.register(PropertyImage)
 class PropertyImageAdmin(admin.ModelAdmin):
-    list_display = ("id", "property", "image_url", "caption", "created_at")
-    search_fields = ("property__title", "caption", "image_url")
+    list_display = ("id", "property", "image", "caption", "created_at")
+    search_fields = ("property__title", "caption")
     list_select_related = ("property",)
+
+
+@admin.register(CompanyGalleryImage)
+class CompanyGalleryImageAdmin(admin.ModelAdmin):
+    list_display = ("id", "sort_order", "caption", "created_at")
+    list_editable = ("sort_order",)
+    ordering = ("sort_order", "id")
 
 
 @admin.register(LeadInquiry)

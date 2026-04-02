@@ -152,6 +152,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 if HAS_CORSHEADERS:
     CORS_ALLOWED_ORIGINS = [
         'http://localhost:5173',

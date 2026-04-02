@@ -102,17 +102,54 @@ class Property(models.Model):
 
 
 class PropertyImage(models.Model):
+    """Фото объекта: загрузка файла; старые записи могли содержать только image_url."""
+
     property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="images")
-    image_url = models.URLField(max_length=500)
+    image = models.ImageField(upload_to="properties/", blank=True, null=True)
+    image_url = models.URLField(max_length=500, blank=True, null=True)
     caption = models.CharField(max_length=150, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Фото объекта"
         verbose_name_plural = "Фото объектов"
+        ordering = ["id"]
 
     def __str__(self):
         return f"Фото для {self.property.title}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.image:
+            from .image_utils import resize_image_field
+
+            resize_image_field(self.image, max_width=1400, max_height=1050)
+            super().save(update_fields=["image"])
+
+
+class CompanyGalleryImage(models.Model):
+    """Фотографии для блока «О компании» на главной странице."""
+
+    image = models.ImageField(upload_to="gallery/")
+    caption = models.CharField(max_length=200, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Фото галереи компании"
+        verbose_name_plural = "Галерея компании"
+        ordering = ["sort_order", "id"]
+
+    def __str__(self):
+        return self.caption or f"Фото #{self.pk}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.image:
+            from .image_utils import resize_image_field
+
+            resize_image_field(self.image, max_width=1200, max_height=800)
+            super().save(update_fields=["image"])
 
 
 class PropertyDocument(models.Model):

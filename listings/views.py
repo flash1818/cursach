@@ -4,13 +4,17 @@ from django.shortcuts import redirect, render
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from rest_framework import filters, permissions, status, viewsets
+from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import City, Client, Deal, District, Favorite, LeadInquiry, Notification, Property, PropertyImage, PropertyType, Realtor
+from .models import City, Client, CompanyGalleryImage, Deal, District, Favorite, LeadInquiry, Notification, Property, PropertyImage, PropertyType, Realtor
 from .auth import CsrfExemptSessionAuthentication
 from .serializers import (
     CitySerializer,
+    CompanyGalleryImageSerializer,
     DistrictSerializer,
     FavoriteSerializer,
     LeadInquirySerializer,
@@ -156,9 +160,45 @@ class MyPropertyViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+class CompanyGalleryImageViewSet(viewsets.ReadOnlyModelViewSet):
+    """Фотографии для главной страницы (галерея компании)."""
+
+    queryset = CompanyGalleryImage.objects.all().order_by("sort_order", "id")
+    serializer_class = CompanyGalleryImageSerializer
+    permission_classes = [permissions.AllowAny]
+
+
 class PropertyImageViewSet(viewsets.ModelViewSet):
-    queryset = PropertyImage.objects.select_related("property").all().order_by("-created_at")
+    queryset = PropertyImage.objects.select_related("property", "property__realtor").all().order_by("id")
     serializer_class = PropertyImageSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+    authentication_classes = (CsrfExemptSessionAuthentication,)
+    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def _assert_realtor_owns(self, prop):
+        user = self.request.user
+        if not hasattr(user, "realtor_profile"):
+            raise PermissionDenied("Только риэлтор может добавлять или менять фотографии объектов.")
+        if prop.realtor_id != user.realtor_profile.id:
+            raise PermissionDenied("Можно работать только со своими объектами.")
+
+    def perform_create(self, serializer):
+        prop = serializer.validated_data["property"]
+        self._assert_realtor_owns(prop)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._assert_realtor_owns(serializer.instance.property)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._assert_realtor_owns(instance.property)
+        instance.delete()
 
 
 class LeadInquiryViewSet(viewsets.ModelViewSet):

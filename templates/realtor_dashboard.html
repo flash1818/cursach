@@ -16,7 +16,7 @@
                 Телефон: {{ realtor.phone|default:"не указан" }}
             </span>
             <span class="muted" style="font-size:11px;">
-                Управление объектами идёт через API /api/my/properties/
+                Управление объявлениями и фотографиями — в этом кабинете
             </span>
         </div>
     </header>
@@ -360,19 +360,35 @@
         return false;
     }
 
-    async function promptAddImage(propertyId) {
-        const url = window.prompt('Введите URL фотографии (из интернета):');
-        if (!url) return;
-        try {
-            await apiSend('/api/property-images/', 'POST', {
-                property: propertyId,
-                image_url: url,
-                caption: ''
-            });
-            alert('Фотография добавлена.');
-        } catch (e) {
-            alert('Ошибка: ' + e.message);
-        }
+    function promptAddImage(propertyId) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/jpeg,image/png,image/webp,image/gif';
+        input.onchange = async function () {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const fd = new FormData();
+            fd.append('property', String(propertyId));
+            fd.append('image', file);
+            fd.append('caption', '');
+            try {
+                const resp = await fetch('/api/property-images/', {
+                    method: 'POST',
+                    body: fd,
+                    credentials: 'include',
+                    headers: { 'Accept': 'application/json' }
+                });
+                const data = await resp.json().catch(function () { return {}; });
+                if (!resp.ok) {
+                    const msg = data.detail || data.image || JSON.stringify(data) || 'Ошибка ' + resp.status;
+                    throw new Error(typeof msg === 'string' ? msg : 'Ошибка загрузки');
+                }
+                alert('Фотография загружена и обработана.');
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        };
+        input.click();
     }
 
     async function deleteProperty(id) {

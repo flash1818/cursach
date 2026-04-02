@@ -4,6 +4,7 @@ from rest_framework import serializers
 from .models import (
     City,
     Client,
+    CompanyGalleryImage,
     District,
     Favorite,
     LeadInquiry,
@@ -39,10 +40,48 @@ class DistrictSerializer(serializers.ModelSerializer):
 
 
 class PropertyImageSerializer(serializers.ModelSerializer):
+    """Фото объекта: загрузка файла `image`; в ответе `image_url` — полный URL."""
+
+    image = serializers.ImageField(write_only=True, required=False)
+    image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = PropertyImage
-        fields = ("id", "property", "image_url", "caption", "created_at")
+        fields = ("id", "property", "image", "image_url", "caption", "created_at")
         read_only_fields = ("created_at",)
+
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get("request")
+            url = obj.image.url
+            if request:
+                return request.build_absolute_uri(url)
+            return url
+        return obj.image_url or ""
+
+    def validate(self, attrs):
+        if self.instance is None and not attrs.get("image"):
+            raise serializers.ValidationError(
+                {"image": "Загрузите файл изображения JPG, PNG или WebP."}
+            )
+        return attrs
+
+
+class CompanyGalleryImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CompanyGalleryImage
+        fields = ("id", "image_url", "caption", "sort_order", "created_at")
+
+    def get_image_url(self, obj):
+        if not obj.image:
+            return ""
+        request = self.context.get("request")
+        url = obj.image.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
 
 
 class PropertyMetroSerializer(serializers.ModelSerializer):

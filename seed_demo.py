@@ -1,13 +1,31 @@
 import os
+from io import BytesIO
 
 import django
+from django.core.files.base import ContentFile
+from PIL import Image
 
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "realestate_site.settings")
 django.setup()
 
 from django.contrib.auth import get_user_model
-from listings.models import City, District, LeadInquiry, Property, PropertyImage, PropertyType, Realtor
+from listings.models import (
+    City,
+    CompanyGalleryImage,
+    District,
+    LeadInquiry,
+    Property,
+    PropertyImage,
+    PropertyType,
+    Realtor,
+)
+
+
+def jpeg_placeholder(color_rgb, w=1600, h=1200):
+    buf = BytesIO()
+    Image.new("RGB", (w, h), color=color_rgb).save(buf, format="JPEG", quality=92)
+    return buf.getvalue()
 
 
 User = get_user_model()
@@ -64,11 +82,7 @@ def main():
             "latitude": 55.7577,
             "longitude": 37.6156,
             "is_featured": True,
-            "image_urls": [
-                "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=900&q=80",
-            ],
+            "image_colors": [(52, 64, 78), (62, 78, 94), (48, 58, 72)],
         },
         {
             "title": "Офисный блок в деловом квартале",
@@ -87,11 +101,7 @@ def main():
             "latitude": 59.965,
             "longitude": 30.311,
             "is_featured": False,
-            "image_urls": [
-                "https://images.unsplash.com/photo-1529424301806-4be0bb154e3b?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1483478550801-ceba5fe50e8e?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=900&q=80",
-            ],
+            "image_colors": [(58, 70, 86), (68, 84, 100), (44, 54, 68)],
         },
         {
             "title": "Дом с участком и террасой",
@@ -110,11 +120,7 @@ def main():
             "latitude": 55.865,
             "longitude": 49.08,
             "is_featured": True,
-            "image_urls": [
-                "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1600607687920-4e2a5345c9a5?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1600585154340-0ef3c08c0632?auto=format&fit=crop&w=900&q=80",
-            ],
+            "image_colors": [(55, 68, 82), (65, 80, 96), (50, 60, 74)],
         },
         {
             "title": "Студия рядом с набережной",
@@ -133,11 +139,7 @@ def main():
             "latitude": 55.7264,
             "longitude": 37.5786,
             "is_featured": False,
-            "image_urls": [
-                "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1523755231516-e43fd2e8dca5?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1505691723518-36a5ac3be353?auto=format&fit=crop&w=900&q=80",
-            ],
+            "image_colors": [(54, 66, 80), (64, 76, 92), (46, 56, 70)],
         },
         {
             "title": "Торговое помещение на первой линии",
@@ -156,27 +158,37 @@ def main():
             "latitude": 59.9322,
             "longitude": 30.3466,
             "is_featured": False,
-            "image_urls": [
-                "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
-                "https://images.unsplash.com/photo-1529429617124-aee63a28bd55?auto=format&fit=crop&w=900&q=80",
-            ],
+            "image_colors": [(56, 68, 84), (66, 82, 98), (48, 58, 72)],
         },
     ]
 
     for item in properties:
-        image_urls = item.pop("image_urls")
+        image_colors = item.pop("image_colors")
         prop, _ = Property.objects.update_or_create(title=item["title"], defaults=item)
-        # Все демо-объекты привязаны к единственному риэлтору
         if prop.realtor_id != realtor_profile.id:
             prop.realtor = realtor_profile
             prop.save(update_fields=["realtor"])
-        for idx, url in enumerate(image_urls):
-            PropertyImage.objects.update_or_create(
+        PropertyImage.objects.filter(property=prop).delete()
+        for idx, rgb in enumerate(image_colors):
+            pi = PropertyImage(
                 property=prop,
-                image_url=url,
-                defaults={"caption": f"{prop.title} · фото {idx + 1}"},
+                caption=f"{prop.title} · фото {idx + 1}",
             )
+            raw = jpeg_placeholder(rgb)
+            pi.image.save(f"demo_{prop.id}_{idx}.jpg", ContentFile(raw), save=False)
+            pi.save()
+
+    CompanyGalleryImage.objects.all().delete()
+    gallery_rows = [
+        ("Команда и офис", (46, 58, 72)),
+        ("Подбор объектов", (58, 72, 88)),
+        ("Сделка под ключ", (40, 50, 64)),
+    ]
+    for order, (caption, rgb) in enumerate(gallery_rows):
+        g = CompanyGalleryImage(caption=caption, sort_order=order)
+        raw = jpeg_placeholder(rgb, w=1400, h=900)
+        g.image.save(f"gallery_{order}.jpg", ContentFile(raw), save=False)
+        g.save()
 
     LeadInquiry.objects.update_or_create(
         full_name="Анна Серова",
