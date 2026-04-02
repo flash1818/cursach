@@ -10,7 +10,7 @@ if not exist "%ROOT%\venv\Scripts\python.exe" (
 )
 
 if not exist "%ROOT%\frontend\node_modules" (
-    echo ERROR: Run INSTALL.BAT first (npm).
+    echo ERROR: Run INSTALL.BAT first - npm deps missing.
     pause
     exit /b 1
 )
@@ -26,14 +26,15 @@ if errorlevel 1 (
     )
 )
 
-echo Backend :8000
-start "RealEstate-Backend" cmd /k cd /d "%ROOT%" ^&^& set USE_POSTGRES=0 ^&^& set PGCLIENTENCODING=UTF8 ^&^& "%ROOT%\venv\Scripts\python.exe" -u "%ROOT%\manage.py" runserver 0.0.0.0:8000
+echo Backend 0.0.0.0 port 8000
+start "RealEstate-Backend" /D "%ROOT%" cmd /k "set USE_POSTGRES=0&& set PGCLIENTENCODING=UTF8&& venv\Scripts\python.exe -u manage.py runserver 0.0.0.0:8000"
 
-echo Frontend :5173
-start "RealEstate-Frontend" cmd /k cd /d "%ROOT%\frontend" ^&^& npm run dev -- --host 0.0.0.0 --port 5173
+echo Frontend 0.0.0.0 port 5173
+start "RealEstate-Frontend" /D "%ROOT%\frontend" cmd /k "npm run dev -- --host 0.0.0.0 --port 5173"
 
 echo.
-echo Browser: http://localhost:5173
+echo Open in browser: localhost port 5173
+echo You can close this window; servers stay in the other two windows.
 echo.
 pause
 endlocal

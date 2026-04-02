@@ -23,7 +23,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Removing old venv (fixes copy from another PC / broken Python path)...
+echo Removing old venv - fixes broken Python path after copy from another PC.
 if exist "%ROOT%\venv" rmdir /s /q "%ROOT%\venv"
 
 echo Creating new venv on THIS computer...
@@ -60,7 +60,7 @@ echo seed...
 echo.
 echo ========================================
 echo   OK. Run RUN_PROJECT.BAT
-echo   http://localhost:5173
+echo   Then open browser: localhost port 5173
 echo ========================================
 echo.
 pause
