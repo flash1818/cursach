@@ -60,6 +60,7 @@ npm run dev -- --host 0.0.0.0 --port 5173
 ### Переменные окружения (по желанию)
 - `DJANGO_SECRET_KEY` — секрет Django (для продакшена задайте свой).
 - `USE_POSTGRES=1` и `POSTGRES_*` — если используете PostgreSQL вместо SQLite.
+- Во **frontend** (файл `frontend/.env.local` или переменные сборки): `VITE_YANDEX_MAPS_API_KEY` — ключ [JavaScript API и Геосаджеста](https://developer.tech.yandex.ru/) для карты на витрине; без ключа Яндекс.Карты могут не отображаться.
 
 ---
 
@@ -72,11 +73,32 @@ npm run dev -- --host 0.0.0.0 --port 5173
 
 ## Демо-данные и API
 
-После `seed_demo.py` есть демо-риэлтор: логин **`demo_realtor`**, пароль **`demo_realtor_pass`**.
+После `seed_demo.py` создаются учётные записи ниже (пароли при каждом запуске сидера сбрасываются на указанные).
+
+### Админка Django
+
+- **URL:** [http://localhost:8000/internal-admin-only/](http://localhost:8000/internal-admin-only/)  
+  (путь намеренно нестандартный — см. `realestate_site/urls.py`.)
+- **Логин:** `demo_admin`
+- **Пароль:** `demo_admin_pass`
+
+### Демо-риэлтор (вход на сайт / кабинет)
+
+- **Логин:** `demo_realtor`
+- **Пароль:** `demo_realtor_pass`  
+- Страница входа: [http://localhost:8000/auth/login/](http://localhost:8000/auth/login/)
 
 REST API: `http://localhost:8000/api/` (список эндпоинтов см. в коде `listings/urls.py`).
 
 Фронт ходит в API через Vite proxy (`/api`). HTML-страницы входа/профиля проксируются с тем же origin при работе через `localhost:5173`.
+
+### Витрина React и кнопка «К сделке»
+
+Сессия привязана к **origin** (хост + порт). Если войти только на `http://localhost:8000`, а каталог открыт на `http://localhost:5173`, cookie не попадёт в запросы к API с витрины — уведомления и избранное не заработают.
+
+**Вход для работы с витриной:** откройте **`http://localhost:5173/auth/login/`** (или ссылку «Войти» в шапке SPA — она ведёт на тот же порт, что и каталог).
+
+Каждый запуск **`seed_demo.py`** очищает **уведомления и сделки**, возвращает объекты со статусов «Продан»/«Архив» в **«Активный»** и подставляет фото из папок **`demo_images/properties/`** и **`demo_images/gallery_*.jpg`** (и копии в **`frontend/public/demo/`**). Если файлов нет — однотонные заглушки. Фотографии можно положить своими файлами с нужными именами перед сидером.
 
 ---
 

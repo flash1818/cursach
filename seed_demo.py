@@ -10,11 +10,14 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "realestate_site.settings")
 django.setup()
 
 from django.contrib.auth import get_user_model
+from listings.demo_assets import DEMO_IMAGES, ensure_demo_image_dirs
 from listings.models import (
     City,
     CompanyGalleryImage,
+    Deal,
     District,
     LeadInquiry,
+    Notification,
     Property,
     PropertyImage,
     PropertyType,
@@ -31,7 +34,31 @@ def jpeg_placeholder(color_rgb, w=1600, h=1200):
 User = get_user_model()
 
 
+def reset_demo_state():
+    """Удалить уведомления и сделки; вернуть объекты sold/archived в каталог (active)."""
+    Notification.objects.all().delete()
+    Deal.objects.all().delete()
+    Property.objects.filter(status__in=["sold", "archived"]).update(status="active")
+
+
 def main():
+    reset_demo_state()
+    ensure_demo_image_dirs()
+
+    # Суперпользователь для Django Admin (URL см. realestate_site/urls.py → internal-admin-only)
+    admin_user, _ = User.objects.get_or_create(
+        username="demo_admin",
+        defaults={
+            "email": "admin@example.com",
+            "is_staff": True,
+            "is_superuser": True,
+        },
+    )
+    admin_user.is_staff = True
+    admin_user.is_superuser = True
+    admin_user.set_password("demo_admin_pass")
+    admin_user.save()
+
     # Единственный демо-аккаунт риэлтора
     realtor_user, _ = User.objects.get_or_create(
         username="demo_realtor",
@@ -47,7 +74,11 @@ def main():
 
     realtor_profile, _ = Realtor.objects.get_or_create(
         user=realtor_user,
-        defaults={"phone": "+7 999 000 00 00"},
+        defaults={
+            "phone": "+7 999 000 00 00",
+            "position": "Ведущий специалист",
+            "bio": "Сопровождаю сделки с недвижимостью с 2015 года.",
+        },
     )
 
     apartment, _ = PropertyType.objects.get_or_create(name="Квартира")
@@ -162,7 +193,7 @@ def main():
         },
     ]
 
-    for item in properties:
+    for prop_index, item in enumerate(properties):
         image_colors = item.pop("image_colors")
         prop, _ = Property.objects.update_or_create(title=item["title"], defaults=item)
         if prop.realtor_id != realtor_profile.id:
@@ -174,7 +205,11 @@ def main():
                 property=prop,
                 caption=f"{prop.title} · фото {idx + 1}",
             )
-            raw = jpeg_placeholder(rgb)
+            disk = DEMO_IMAGES / "properties" / f"p{prop_index}_{idx}.jpg"
+            if disk.is_file() and disk.stat().st_size > 500:
+                raw = disk.read_bytes()
+            else:
+                raw = jpeg_placeholder(rgb)
             pi.image.save(f"demo_{prop.id}_{idx}.jpg", ContentFile(raw), save=False)
             pi.save()
 
@@ -186,7 +221,11 @@ def main():
     ]
     for order, (caption, rgb) in enumerate(gallery_rows):
         g = CompanyGalleryImage(caption=caption, sort_order=order)
-        raw = jpeg_placeholder(rgb, w=1400, h=900)
+        disk = DEMO_IMAGES / f"gallery_{order}.jpg"
+        if disk.is_file() and disk.stat().st_size > 500:
+            raw = disk.read_bytes()
+        else:
+            raw = jpeg_placeholder(rgb, w=1400, h=900)
         g.image.save(f"gallery_{order}.jpg", ContentFile(raw), save=False)
         g.save()
 
