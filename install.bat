@@ -55,7 +55,7 @@ echo migrate...
 if errorlevel 1 goto BAD
 
 echo seed...
-"%ROOT%\venv\Scripts\python.exe" "%ROOT%\seed_demo.py"
+"%ROOT%\venv\Scripts\python.exe" "%ROOT%\seed_demo_no_images.py"
 
 echo.
 echo ========================================
