@@ -25,6 +25,12 @@
         <a href="#tab-properties" class="tab-link active" onclick="switchTab(event, 'tab-properties')">
             Мои объекты
         </a>
+        <a href="#tab-deals" class="tab-link" onclick="switchTab(event, 'tab-deals')">
+            Сделки ({{ deals_active|length }})
+        </a>
+        <a href="#tab-notifications" class="tab-link" onclick="switchTab(event, 'tab-notifications')">
+            Уведомления ({{ notifications|length }})
+        </a>
         <a href="#tab-profile" class="tab-link" onclick="switchTab(event, 'tab-profile')">
             Профиль риэлтора
         </a>
@@ -123,12 +129,176 @@
         <div class="divider"></div>
 
         <div id="realtor-properties-root">
-            <div class="profile-title" style="margin-bottom:8px;font-size:18px;">Мои объекты</div>
+            <div class="profile-title" style="margin-bottom:8px;font-size:18px;">Активные объявления</div>
+            <p class="muted" style="margin-bottom:10px;font-size:12px;">
+                Объекты со статусом «Продан» или «Архив» после завершения сделки скрываются отсюда и переносятся в блок ниже.
+            </p>
             <div id="realtor-properties-list" class="profile-list"></div>
             <p id="realtor-properties-empty" class="muted" style="display:none;">
-                У вас пока нет объектов. Создайте первый с помощью формы выше.
+                У вас пока нет активных объектов. Создайте новый или завершите сделку — тогда объект окажется в скрытом списке.
             </p>
         </div>
+
+        <details class="notification-details" style="margin-top:20px;">
+            <summary>
+                <strong>Скрытые объекты (сделка завершена / снято с показа)</strong>
+                <span class="muted" style="font-size:11px;margin-left:8px;">разверните список</span>
+            </summary>
+            <p class="muted" style="margin:10px 0;font-size:12px;">
+                Здесь объявления, по которым сделка завершена: продажа → статус «Продан», аренда → «Архив». На витрине сайта они не показываются.
+            </p>
+            <div id="realtor-hidden-list" class="profile-list"></div>
+            <p id="realtor-hidden-empty" class="muted" style="display:none;">Нет скрытых объектов.</p>
+        </details>
+    </section>
+
+    <section id="tab-deals" class="profile-tab-panel" style="display:none;">
+        <p class="muted" style="margin-bottom:12px;font-size:12px;">
+            Завершите сделку — объект уйдёт в скрытый список, клиент получит уведомление. Отмена — объект останется в каталоге.
+        </p>
+        {% if deals_active %}
+            <div class="profile-list" style="max-height:none;">
+                {% for deal in deals_active %}
+                    <div class="profile-item" style="align-items:flex-start;">
+                        <div class="profile-item-main">
+                            <div class="profile-item-title">{{ deal.property.title }}</div>
+                            <div class="profile-item-meta">
+                                {{ deal.property.city.name }} · {{ deal.get_deal_type_display }} · {{ deal.price }} ₽
+                            </div>
+                            <div class="profile-item-extra">
+                                Клиент:
+                                {{ deal.client.user.get_full_name|default:deal.client.user.username }}
+                                {% if deal.client.phone %}· {{ deal.client.phone }}{% endif %}
+                                {% if deal.client.user.email %}· {{ deal.client.user.email }}{% endif %}
+                            </div>
+                            <span class="deal-status-pill deal-status-pill--{{ deal.status }}">
+                                Статус: {{ deal.get_status_display }}
+                            </span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:8px;align-items:stretch;">
+                            <form method="post" action="{% url 'profile' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="deal_id" value="{{ deal.id }}">
+                                <button type="submit" name="complete_deal" value="1" class="nav-btn" style="white-space:nowrap;">
+                                    Завершить сделку
+                                </button>
+                            </form>
+                            <form
+                                method="post"
+                                action="{% url 'profile' %}"
+                                onsubmit="return confirm('Отменить сделку? Клиент получит уведомление, объект останется в каталоге.');"
+                            >
+                                {% csrf_token %}
+                                <input type="hidden" name="deal_id" value="{{ deal.id }}">
+                                <button type="submit" name="cancel_deal" value="1" class="danger-btn" style="white-space:nowrap;">
+                                    Отменить сделку
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">Нет активных сделок (в процессе / подписана).</p>
+        {% endif %}
+
+        <details class="notification-details" style="margin-top:20px;">
+            <summary>
+                <strong>Завершённые и отменённые ({{ deals_done|length }})</strong>
+            </summary>
+            <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px;">
+                {% for deal in deals_done %}
+                    <div class="profile-item" style="flex-direction:column;align-items:stretch;gap:6px;">
+                        <div class="profile-item-title">{{ deal.property.title }}</div>
+                        <div class="profile-item-meta">
+                            {{ deal.property.city.name }} · Клиент:
+                            {{ deal.client.user.get_full_name|default:deal.client.user.username }}
+                        </div>
+                        <div class="profile-item-extra">
+                            {{ deal.price }} ₽
+                        </div>
+                        <span class="deal-status-pill deal-status-pill--{{ deal.status }}">
+                            {{ deal.get_status_display }}
+                        </span>
+                        {% if deal.status == "closed" %}
+                            <div class="muted" style="font-size:11px;">
+                                Сделка завершена — объект в скрытом списке и снят с витрины.
+                            </div>
+                        {% elif deal.status == "cancelled" %}
+                            <div class="muted" style="font-size:11px;">
+                                Сделка отменена — объявление остаётся доступным в каталоге.
+                            </div>
+                        {% endif %}
+                    </div>
+                {% empty %}
+                    <p class="muted" style="margin:0;">Пока нет завершённых или отменённых сделок.</p>
+                {% endfor %}
+            </div>
+        </details>
+    </section>
+
+    <section id="tab-notifications" class="profile-tab-panel" style="display:none;">
+        {% if notifications %}
+            <div class="notif-toolbar">
+                <p class="muted" style="margin:0;font-size:12px;">
+                    Запросы «К сделке» от клиентов. Новые уведомления всплывают сверху на любой вкладке (~20 с).
+                </p>
+                <form method="post" action="{% url 'profile' %}" style="margin:0;" onsubmit="return confirm('Удалить все уведомления?');">
+                    {% csrf_token %}
+                    <button type="submit" name="clear_notifications" value="1" class="danger-btn">
+                        Очистить все
+                    </button>
+                </form>
+            </div>
+            <div class="profile-list profile-list--notifications">
+                {% for note in notifications %}
+                    <details class="notification-details">
+                        <summary>
+                            <div class="notification-sum-row">
+                                <strong>{{ note.title }}</strong>
+                                <span class="muted" style="font-size:11px;">{{ note.created_at|date:"d.m.Y H:i" }}</span>
+                            </div>
+                            {% if note.related_property %}
+                                <div class="notification-context">
+                                    Объект: {{ note.related_property.title }}
+                                </div>
+                            {% endif %}
+                            {% if note.related_client %}
+                                <div class="notification-context">
+                                    Клиент: {{ note.related_client.user.get_full_name|default:note.related_client.user.username }}
+                                </div>
+                            {% endif %}
+                        </summary>
+                        <div class="notification-body">{{ note.body|linebreaksbr }}</div>
+                        {% if note.show_start_deal %}
+                            <div class="notification-actions">
+                                <form method="post" action="{% url 'profile' %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="notification_id" value="{{ note.id }}">
+                                    <button type="submit" name="start_deal" value="1" class="nav-btn">
+                                        Начать сделку
+                                    </button>
+                                </form>
+                                <p class="muted" style="margin:8px 0 0;font-size:11px;">
+                                    Будет создана сделка в статусе «В процессе» с ценой из объявления; клиент увидит её во вкладке «Сделки».
+                                </p>
+                            </div>
+                        {% endif %}
+                        <div class="notification-actions">
+                            <form method="post" action="{% url 'profile' %}" style="margin:0;">
+                                {% csrf_token %}
+                                <input type="hidden" name="notification_id" value="{{ note.id }}">
+                                <button type="submit" name="delete_notification" value="1" class="nav-btn-secondary" style="font-size:11px;padding:6px 10px;">
+                                    Удалить это уведомление
+                                </button>
+                            </form>
+                        </div>
+                    </details>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="muted">Пока нет уведомлений.</p>
+        {% endif %}
     </section>
 
     <section id="tab-profile" class="profile-tab-panel" style="display:none;">
@@ -401,10 +571,58 @@
         }
     }
 
+    async function loadHiddenProperties() {
+        const list = document.getElementById('realtor-hidden-list');
+        const emptyLabel = document.getElementById('realtor-hidden-empty');
+        if (!list || !emptyLabel) {
+            return;
+        }
+        list.innerHTML = '';
+        try {
+            const data = await apiGet('/api/my/properties/?hidden=1');
+            if (!data.length) {
+                emptyLabel.style.display = 'block';
+                return;
+            }
+            emptyLabel.style.display = 'none';
+            data.forEach(function (p) {
+                const statusNote =
+                    p.status === 'sold'
+                        ? 'Продан · сделка завершена'
+                        : p.status === 'archived'
+                          ? 'Архив · сделка завершена (аренда)'
+                          : p.status;
+                const row = document.createElement('div');
+                row.className = 'profile-item';
+                row.innerHTML =
+                    '<div class="profile-item-main">' +
+                    '<div class="profile-item-title">' +
+                    p.title +
+                    ' · ' +
+                    p.price +
+                    ' ₽</div>' +
+                    '<div class="profile-item-meta">' +
+                    (p.city_name || '') +
+                    '</div>' +
+                    '<div class="profile-item-extra muted" style="font-size:11px;">' +
+                    statusNote +
+                    '</div>' +
+                    '</div>';
+                list.appendChild(row);
+            });
+        } catch (e) {
+            console.error(e);
+            emptyLabel.style.display = 'block';
+            emptyLabel.textContent = 'Не удалось загрузить скрытые объекты.';
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         loadChoices();
         loadRealtorProperties();
+        loadHiddenProperties();
     });
 </script>
+{% include "includes/notification_poll.html" %}
 {% endblock %}
 
