@@ -1,9 +1,11 @@
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, Max
 from django.utils import timezone
 from django.shortcuts import redirect, render
+from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from rest_framework import filters, permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -58,8 +60,97 @@ class DistrictViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+def _finalize_deal_interest(user, prop) -> str | None:
+    """
+    Создаёт уведомления клиенту и риэлтору по запросу «К сделке».
+    Требуется: у user есть client_profile, у объекта назначен риэлтор.
+    Возвращает текст ошибки или None.
+    """
+    if not prop.realtor_id:
+        return "У этого объекта пока не назначен ответственный риэлтор."
+    if prop.status in ("sold", "archived"):
+        return "Этот объект снят с показа — запрос к сделке недоступен."
+
+    realtor = prop.realtor
+    ru = realtor.user
+    display_name = (ru.get_full_name() or "").strip() or ru.username
+    deal_label = "Продажа" if prop.deal_type == "sale" else "Аренда"
+
+    body_lines = [
+        "Вы запросили сопровождение сделки по объекту из каталога.",
+        "",
+        "Ответственный риэлтор",
+        f"Имя: {display_name}",
+        f"Телефон: {realtor.phone or 'уточняйте в агентстве'}",
+        f"E-mail: {ru.email or 'не указан'}",
+    ]
+    if realtor.position:
+        body_lines.append(f"Должность: {realtor.position}")
+    if realtor.bio:
+        short_bio = realtor.bio.strip()
+        if len(short_bio) > 280:
+            short_bio = short_bio[:277] + "…"
+        body_lines.extend(["", "О специалисте", short_bio])
+
+    body_lines.extend(
+        [
+            "",
+            "Объект",
+            f"«{prop.title}»",
+            f"Адрес: {prop.address}",
+            f"Город: {prop.city.name}",
+            f"Цена: {prop.price} ₽ · {deal_label}",
+            f"Статус в каталоге: {prop.get_status_display()}",
+            "",
+            "Дальнейшие шаги: свяжитесь с риэлтором, согласуйте просмотр и перечень документов. "
+            "Сообщите адрес объекта или номер объявления — так быстрее откроют карточку сделки.",
+        ]
+    )
+
+    Notification.objects.create(
+        user=user,
+        kind=Notification.Kind.GENERIC,
+        title=f"Контакты по сделке: {prop.title}",
+        body="\n".join(body_lines),
+        related_property=prop,
+    )
+
+    client = user.client_profile
+    cu = user
+    client_display = (cu.get_full_name() or "").strip() or cu.username
+    realtor_lines = [
+        "Клиент нажал «К сделке» по вашему объекту и хочет сопровождение.",
+        "",
+        "Контактные данные клиента",
+        f"Имя: {client_display}",
+        f"Логин: {cu.username}",
+        f"Телефон: {client.phone or 'не указан в профиле'}",
+        f"E-mail: {cu.email or 'не указан'}",
+        "",
+        "Объект",
+        f"«{prop.title}»",
+        f"Адрес: {prop.address}",
+        f"Город: {prop.city.name}",
+        f"Цена: {prop.price} ₽ · {deal_label}",
+        "",
+        "Откройте уведомление в профиле и нажмите «Начать сделку», чтобы клиент увидел сделку в своём кабинете.",
+    ]
+    Notification.objects.create(
+        user=realtor.user,
+        kind=Notification.Kind.DEAL_INQUIRY,
+        title=f"Запрос на сделку: {prop.title}",
+        body="\n".join(realtor_lines),
+        related_property=prop,
+        related_client=client,
+    )
+    return None
+
+
 class PropertyViewSet(viewsets.ModelViewSet):
-    queryset = Property.objects.select_related("property_type", "city", "district").prefetch_related("images")
+    queryset = (
+        Property.objects.select_related("property_type", "city", "district", "realtor__user")
+        .prefetch_related("images")
+    )
     serializer_class = PropertySerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ("title", "address", "description", "city__name", "district__name", "property_type__name")
@@ -104,7 +195,41 @@ class PropertyViewSet(viewsets.ModelViewSet):
         if featured in {"1", "true", "True", "yes"}:
             queryset = queryset.filter(is_featured=True)
 
+        if self.action == "list":
+            queryset = queryset.exclude(status__in=["sold", "archived"])
+
         return queryset
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="deal-interest",
+        permission_classes=[IsAuthenticated],
+        authentication_classes=[CsrfExemptSessionAuthentication],
+    )
+    def deal_interest(self, request, pk=None):
+        """
+        Клиент запрашивает переход к сделке: создаётся уведомление с контактами риэлтора.
+        """
+        prop = self.get_object()
+        user = request.user
+
+        if hasattr(user, "realtor_profile") and not hasattr(user, "client_profile"):
+            raise PermissionDenied(
+                "Запрос контактов доступен аккаунтам клиентов. Войдите как клиент или зарегистрируйтесь."
+            )
+
+        if not hasattr(user, "client_profile"):
+            Client.objects.get_or_create(user=user)
+
+        err = _finalize_deal_interest(user, prop)
+        if err:
+            return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {"detail": "Контакты и детали отправлены в раздел «Уведомления» вашего профиля."},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class MyPropertyViewSet(viewsets.ModelViewSet):
@@ -129,7 +254,10 @@ class MyPropertyViewSet(viewsets.ModelViewSet):
             .filter(realtor=realtor)
         )
 
-        return queryset
+        hidden = self.request.query_params.get("hidden")
+        if str(hidden).lower() in ("1", "true", "yes"):
+            return queryset.filter(status__in=["sold", "archived"]).order_by("-updated_at")
+        return queryset.exclude(status__in=["sold", "archived"]).order_by("-created_at")
 
     def _get_realtor(self):
         user = self.request.user
@@ -409,6 +537,229 @@ def register_page(request):
     )
 
 
+def _handle_realtor_start_deal(request, user):
+    """Создание Deal по уведомлению DEAL_INQUIRY и уведомление клиента."""
+    realtor = user.realtor_profile
+    raw_id = request.POST.get("notification_id")
+    try:
+        nid = int(raw_id)
+    except (TypeError, ValueError):
+        messages.error(request, "Некорректный запрос.")
+        return redirect("profile")
+
+    note = (
+        Notification.objects.filter(
+            id=nid,
+            user=user,
+            kind=Notification.Kind.DEAL_INQUIRY,
+        )
+        .select_related("related_property", "related_client", "related_client__user")
+        .first()
+    )
+    if not note or not note.related_client_id or not note.related_property_id:
+        messages.error(request, "Уведомление не найдено или устарело.")
+        return redirect("profile")
+
+    prop = note.related_property
+    client = note.related_client
+    if prop.realtor_id != realtor.id:
+        messages.error(request, "Этот объект не относится к вашим объявлениям.")
+        return redirect("profile")
+
+    if Deal.objects.filter(client=client, property=prop).exists():
+        messages.warning(request, "Сделка с этим клиентом по данному объекту уже оформлена.")
+        return redirect("profile")
+
+    Deal.objects.create(
+        property=prop,
+        client=client,
+        realtor=realtor,
+        deal_type=prop.deal_type,
+        price=prop.price,
+        status="draft",
+    )
+    note.is_read = True
+    note.save(update_fields=["is_read"])
+
+    cu = client.user
+    realtor_name = (user.get_full_name() or "").strip() or user.username
+    Notification.objects.create(
+        user=cu,
+        kind=Notification.Kind.GENERIC,
+        title=f"Сделка начата: {prop.title}",
+        body=(
+            f"Риэлтор {realtor_name} оформил сделку по объекту «{prop.title}».\n\n"
+            f"Сумма в карточке: {prop.price} ₽\n"
+            f"Тип: {prop.get_deal_type_display()}\n"
+            f"Статус сделки: в процессе — ожидайте контакт для согласования документов и просмотра."
+        ),
+        related_property=prop,
+    )
+    messages.success(request, "Сделка создана. Клиент получил уведомление и видит сделку в профиле.")
+    return redirect("profile")
+
+
+def _handle_realtor_complete_deal(request, user):
+    realtor = user.realtor_profile
+    try:
+        did = int(request.POST.get("deal_id"))
+    except (TypeError, ValueError):
+        messages.error(request, "Некорректный запрос.")
+        return redirect("profile")
+
+    deal = (
+        Deal.objects.filter(id=did, realtor=realtor)
+        .select_related("property", "client", "client__user")
+        .first()
+    )
+    if not deal:
+        messages.error(request, "Сделка не найдена.")
+        return redirect("profile")
+    if deal.status not in ("draft", "signed"):
+        messages.warning(request, "Эту сделку уже нельзя завершить.")
+        return redirect("profile")
+
+    prop = deal.property
+    deal.status = "closed"
+    deal.closed_at = timezone.now()
+    deal.save(update_fields=["status", "closed_at"])
+
+    if prop.deal_type == "sale":
+        prop.status = "sold"
+    else:
+        prop.status = "archived"
+    prop.save(update_fields=["status"])
+
+    rn = (user.get_full_name() or "").strip() or user.username
+    Notification.objects.create(
+        user=deal.client.user,
+        kind=Notification.Kind.GENERIC,
+        title=f"Сделка завершена: {prop.title}",
+        body=(
+            f"Риэлтор {rn} отметил сделку по объекту «{prop.title}» как завершённую.\n\n"
+            f"Объявление снято с витрины. Сумма в карточке сделки: {deal.price} ₽.\n"
+            f"При вопросах свяжитесь с агентством."
+        ),
+        related_property=prop,
+    )
+    messages.success(request, "Сделка завершена. Объект скрыт в активном списке; клиент получил уведомление.")
+    return redirect("profile")
+
+
+def _handle_realtor_cancel_deal(request, user):
+    realtor = user.realtor_profile
+    try:
+        did = int(request.POST.get("deal_id"))
+    except (TypeError, ValueError):
+        messages.error(request, "Некорректный запрос.")
+        return redirect("profile")
+
+    deal = (
+        Deal.objects.filter(id=did, realtor=realtor)
+        .select_related("property", "client", "client__user")
+        .first()
+    )
+    if not deal:
+        messages.error(request, "Сделка не найдена.")
+        return redirect("profile")
+    if deal.status not in ("draft", "signed"):
+        messages.warning(request, "Эту сделку уже нельзя отменить.")
+        return redirect("profile")
+
+    prop = deal.property
+    deal.status = "cancelled"
+    deal.closed_at = timezone.now()
+    deal.save(update_fields=["status", "closed_at"])
+
+    rn = (user.get_full_name() or "").strip() or user.username
+    Notification.objects.create(
+        user=deal.client.user,
+        kind=Notification.Kind.GENERIC,
+        title=f"Сделка отменена: {prop.title}",
+        body=(
+            f"Риэлтор {rn} отменил сделку по объекту «{prop.title}».\n\n"
+            f"Объект остаётся в каталоге. Уточните детали у агентства, если нужна помощь с другим вариантом."
+        ),
+        related_property=prop,
+    )
+    messages.success(request, "Сделка отменена. Клиент получил уведомление.")
+    return redirect("profile")
+
+
+def _handle_delete_notification(request, user):
+    try:
+        nid = int(request.POST.get("notification_id"))
+    except (TypeError, ValueError):
+        messages.error(request, "Некорректный запрос.")
+        return redirect("profile")
+    deleted, _ = Notification.objects.filter(id=nid, user=user).delete()
+    if deleted:
+        messages.success(request, "Уведомление удалено.")
+    else:
+        messages.warning(request, "Уведомление не найдено.")
+    return redirect("profile")
+
+
+def _handle_clear_notifications(request, user):
+    n, _ = Notification.objects.filter(user=user).delete()
+    messages.success(
+        request,
+        f"Удалено уведомлений: {n}." if n else "Список уведомлений уже был пуст.",
+    )
+    return redirect("profile")
+
+
+def _handle_remove_favorite(request, user):
+    if not hasattr(user, "client_profile"):
+        return redirect("profile")
+    favorite_id = request.POST.get("favorite_id")
+    if favorite_id:
+        Favorite.objects.filter(id=favorite_id, client=user.client_profile).delete()
+    return redirect("profile")
+
+
+def _handle_favorite_deal_interest(request, user):
+    if hasattr(user, "realtor_profile") and not hasattr(user, "client_profile"):
+        messages.error(request, "Запрос «К сделке» из избранного доступен клиентам.")
+        return redirect("profile")
+    if not hasattr(user, "client_profile"):
+        Client.objects.get_or_create(user=user)
+    favorite_id = request.POST.get("favorite_id")
+    fav = (
+        Favorite.objects.filter(id=favorite_id, client=user.client_profile)
+        .select_related("property", "property__city")
+        .first()
+    )
+    if not fav:
+        messages.error(request, "Запись в избранном не найдена.")
+        return redirect("profile")
+    err = _finalize_deal_interest(user, fav.property)
+    if err:
+        messages.error(request, err)
+    else:
+        messages.success(
+            request,
+            "Запрос отправлен. Контакты риэлтора и ответ — в разделе «Уведомления».",
+        )
+    return redirect("profile")
+
+
+class MyNotificationMetaView(APIView):
+    """Для опроса новых уведомлений с страницы профиля (без перезагрузки)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = (CsrfExemptSessionAuthentication,)
+
+    def get(self, request):
+        qs = Notification.objects.filter(user=request.user)
+        agg = qs.aggregate(m=Max("id"), c=Count("id"))
+        mid = agg["m"] or 0
+        title = ""
+        if mid:
+            title = qs.filter(id=mid).values_list("title", flat=True).first() or ""
+        return Response({"max_id": mid, "count": agg["c"] or 0, "title": title})
+
+
 @login_required
 def profile_page(request):
     """
@@ -418,29 +769,74 @@ def profile_page(request):
     """
     user = request.user
 
+    if request.method == "POST":
+        if "start_deal" in request.POST and hasattr(user, "realtor_profile"):
+            return _handle_realtor_start_deal(request, user)
+        if "complete_deal" in request.POST and hasattr(user, "realtor_profile"):
+            return _handle_realtor_complete_deal(request, user)
+        if "cancel_deal" in request.POST and hasattr(user, "realtor_profile"):
+            return _handle_realtor_cancel_deal(request, user)
+        if "delete_notification" in request.POST:
+            return _handle_delete_notification(request, user)
+        if "clear_notifications" in request.POST:
+            return _handle_clear_notifications(request, user)
+        if "favorite_deal_interest" in request.POST:
+            return _handle_favorite_deal_interest(request, user)
+        if "remove_favorite" in request.POST:
+            return _handle_remove_favorite(request, user)
+
     # Ветвление: если это риэлтор — показываем другой шаблон.
     if hasattr(user, "realtor_profile"):
-        # Здесь можно позже дополнить выборкой объектов через API/JS.
+        realtor = user.realtor_profile
+        notifications = (
+            Notification.objects.filter(user=user)
+            .select_related(
+                "related_property",
+                "related_property__city",
+                "related_client",
+                "related_client__user",
+            )
+            .order_by("-created_at")
+        )
+        existing_pairs = set(
+            Deal.objects.filter(realtor=realtor).values_list("client_id", "property_id")
+        )
+        for n in notifications:
+            n.show_start_deal = (
+                n.kind == Notification.Kind.DEAL_INQUIRY
+                and n.related_client_id
+                and n.related_property_id
+                and (n.related_client_id, n.related_property_id) not in existing_pairs
+            )
+
+        deals_active = (
+            Deal.objects.filter(realtor=realtor, status__in=["draft", "signed"])
+            .select_related("property", "property__city", "client", "client__user")
+            .order_by("-created_at")
+        )
+        deals_done = (
+            Deal.objects.filter(realtor=realtor, status__in=["closed", "cancelled"])
+            .select_related("property", "property__city", "client", "client__user")
+            .order_by("-closed_at", "-created_at")
+        )
+
+        latest_notification_id = (
+            Notification.objects.filter(user=user).order_by("-id").values_list("id", flat=True).first()
+            or 0
+        )
         return render(
             request,
             "realtor_dashboard.html",
             {
-                "realtor": user.realtor_profile,
+                "realtor": realtor,
+                "notifications": notifications,
+                "deals_active": deals_active,
+                "deals_done": deals_done,
+                "latest_notification_id": latest_notification_id,
             },
         )
 
     # ----- Стандартный клиентский профиль -----
-
-    # Обработка удаления избранного
-    if request.method == "POST" and "remove_favorite" in request.POST:
-        favorite_id = request.POST.get("favorite_id")
-        if favorite_id:
-            try:
-                client = user.client_profile
-                Favorite.objects.filter(id=favorite_id, client=client).delete()
-            except Client.DoesNotExist:
-                pass
-        return redirect("profile")
 
     role_display = "Пользователь"
     phone = None
@@ -450,7 +846,8 @@ def profile_page(request):
         phone = user.client_profile.phone
 
     favorites = []
-    deals = []
+    deals_active = []
+    deals_done = []
     notifications = []
     if hasattr(user, "client_profile"):
         favorites = (
@@ -458,15 +855,23 @@ def profile_page(request):
             .select_related("property", "property__city", "property__district")
             .order_by("-created_at")
         )
-        deals = (
-            Deal.objects.filter(client=user.client_profile)
-            .select_related("property", "property__city")
+        deals_active = (
+            Deal.objects.filter(client=user.client_profile, status__in=["draft", "signed"])
+            .select_related("property", "property__city", "realtor", "realtor__user")
             .order_by("-created_at")
+        )
+        deals_done = (
+            Deal.objects.filter(client=user.client_profile, status__in=["closed", "cancelled"])
+            .select_related("property", "property__city", "realtor", "realtor__user")
+            .order_by("-closed_at", "-created_at")
         )
     notifications = (
         Notification.objects.filter(user=user)
         .select_related("related_property", "related_property__city")
         .order_by("-created_at")
+    )
+    latest_notification_id = (
+        Notification.objects.filter(user=user).order_by("-id").values_list("id", flat=True).first() or 0
     )
 
     return render(
@@ -476,8 +881,10 @@ def profile_page(request):
             "role_display": role_display,
             "phone": phone,
             "favorites": favorites,
-            "deals": deals,
+            "deals_active": deals_active,
+            "deals_done": deals_done,
             "notifications": notifications,
+            "latest_notification_id": latest_notification_id,
         },
     )
 

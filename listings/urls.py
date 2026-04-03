@@ -11,6 +11,7 @@ from .views import (
     LoginView,
     LogoutView,
     MeView,
+    MyNotificationMetaView,
     MyPropertyViewSet,
     PropertyImageViewSet,
     PropertyTypeViewSet,
@@ -30,6 +31,7 @@ router.register(r"favorites", FavoriteViewSet, basename="favorite")
 router.register(r"my/properties", MyPropertyViewSet, basename="my-property")
 
 urlpatterns = [
+    path("my/notifications/meta/", MyNotificationMetaView.as_view(), name="my-notifications-meta"),
     path("analytics/", AnalyticsView.as_view(), name="analytics"),
     path("auth/register/", RegisterView.as_view(), name="auth-register"),
     path("auth/login/", LoginView.as_view(), name="auth-login"),

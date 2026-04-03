@@ -58,7 +58,8 @@ const fetchJson = async (url) => {
   }
 }
 
-const PLACEHOLDER_IMG = '/demo/gallery_1.jpg'
+const PLACEHOLDER_IMG =
+  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800"><rect width="1200" height="800" fill="%231e293b"/><text x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23cbd5e1" font-size="42" font-family="Arial,sans-serif">Фото недоступно</text></svg>'
 
 const getPreviewImage = (property) => property?.images?.[0]?.image_url || PLACEHOLDER_IMG
 
@@ -756,21 +757,9 @@ function App() {
                   ))
                 ) : (
                   <>
-                    <img
-                      className="hero-gallery-img-fill"
-                      src="/demo/gallery_0.jpg"
-                      alt="Недвижимость"
-                    />
-                    <img
-                      className="hero-gallery-img-fill"
-                      src="/demo/gallery_1.jpg"
-                      alt="Объект"
-                    />
-                    <img
-                      className="hero-gallery-img-fill"
-                      src="/demo/gallery_2.jpg"
-                      alt="Агентство"
-                    />
+                    <img className="hero-gallery-img-fill" src={PLACEHOLDER_IMG} alt="Недвижимость" />
+                    <img className="hero-gallery-img-fill" src={PLACEHOLDER_IMG} alt="Объект" />
+                    <img className="hero-gallery-img-fill" src={PLACEHOLDER_IMG} alt="Агентство" />
                   </>
                 )}
               </div>

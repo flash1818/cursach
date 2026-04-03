@@ -1,0 +1,40 @@
+{# Опрос новых уведомлений: тост сверху на любой вкладке профиля. Требует window.showAppToast в base.html #}
+<script>
+(function () {
+    var initial = {{ latest_notification_id|default:0 }};
+    var key = 'reProfileNotifMaxId';
+    try {
+        sessionStorage.setItem(key, String(initial));
+    } catch (e) {}
+
+    function readStored() {
+        try {
+            var s = sessionStorage.getItem(key);
+            return s !== null ? parseInt(s, 10) || 0 : initial;
+        } catch (e) {
+            return initial;
+        }
+    }
+    function writeStored(v) {
+        try {
+            sessionStorage.setItem(key, String(v));
+        } catch (e) {}
+    }
+
+    setInterval(function () {
+        fetch('/api/my/notifications/meta/', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                if (!data || typeof window.showAppToast !== 'function') return;
+                var maxId = data.max_id || 0;
+                var prev = readStored();
+                if (maxId > prev) {
+                    var t = (data.title || 'Новое уведомление').trim();
+                    window.showAppToast('Новое уведомление: ' + t, 'info');
+                    writeStored(maxId);
+                }
+            })
+            .catch(function () {});
+    }, 20000);
+})();
+</script>

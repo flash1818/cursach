@@ -33,7 +33,7 @@ export const demoProperties = [
     latitude: 55.7577,
     longitude: 37.6156,
     is_featured: true,
-    images: [{ image_url: '/demo/properties/p0_0.jpg' }],
+    images: [],
   },
   {
     id: 2,
@@ -56,7 +56,7 @@ export const demoProperties = [
     latitude: 59.965,
     longitude: 30.311,
     is_featured: false,
-    images: [{ image_url: '/demo/properties/p1_0.jpg' }],
+    images: [],
   },
   {
     id: 3,
@@ -79,7 +79,7 @@ export const demoProperties = [
     latitude: 55.865,
     longitude: 49.08,
     is_featured: true,
-    images: [{ image_url: '/demo/properties/p2_0.jpg' }],
+    images: [],
   },
   {
     id: 4,
@@ -102,7 +102,7 @@ export const demoProperties = [
     latitude: 55.7264,
     longitude: 37.5786,
     is_featured: false,
-    images: [{ image_url: '/demo/properties/p3_0.jpg' }],
+    images: [],
   },
   {
     id: 5,
@@ -125,7 +125,7 @@ export const demoProperties = [
     latitude: 59.9322,
     longitude: 30.3466,
     is_featured: false,
-    images: [{ image_url: '/demo/properties/p4_0.jpg' }],
+    images: [],
   },
 ]
 

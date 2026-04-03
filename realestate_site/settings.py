@@ -169,4 +169,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.github.dev',
 ]
 
+# Сессия: вход через прокси Vite (:5173) и API на том же origin
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

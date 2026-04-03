@@ -294,7 +294,7 @@ class Appointment(models.Model):
 class Deal(models.Model):
     DEAL_TYPE_CHOICES = Property.DEAL_CHOICES
     STATUS_CHOICES = [
-        ("draft", "Черновик"),
+        ("draft", "В процессе"),
         ("signed", "Подписана"),
         ("closed", "Закрыта"),
         ("cancelled", "Отменена"),
@@ -351,10 +351,19 @@ class PropertyMetro(models.Model):
 
 
 class Notification(models.Model):
+    class Kind(models.TextChoices):
+        GENERIC = "generic", "Общее"
+        DEAL_INQUIRY = "deal_inquiry", "Запрос на сделку от клиента"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="notifications",
+    )
+    kind = models.CharField(
+        max_length=32,
+        choices=Kind.choices,
+        default=Kind.GENERIC,
     )
     title = models.CharField(max_length=200)
     body = models.TextField()
@@ -365,6 +374,13 @@ class Notification(models.Model):
         null=True,
         blank=True,
         related_name="notifications",
+    )
+    related_client = models.ForeignKey(
+        Client,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deal_inquiry_notifications",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -1,34 +1,22 @@
 import os
-from io import BytesIO
 
 import django
-from django.core.files.base import ContentFile
-from PIL import Image
 
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "realestate_site.settings")
 django.setup()
 
 from django.contrib.auth import get_user_model
-from listings.demo_assets import DEMO_IMAGES, ensure_demo_image_dirs
 from listings.models import (
     City,
-    CompanyGalleryImage,
     Deal,
     District,
     LeadInquiry,
     Notification,
     Property,
-    PropertyImage,
     PropertyType,
     Realtor,
 )
-
-
-def jpeg_placeholder(color_rgb, w=1600, h=1200):
-    buf = BytesIO()
-    Image.new("RGB", (w, h), color=color_rgb).save(buf, format="JPEG", quality=92)
-    return buf.getvalue()
 
 
 User = get_user_model()
@@ -43,7 +31,6 @@ def reset_demo_state():
 
 def main():
     reset_demo_state()
-    ensure_demo_image_dirs()
 
     # Суперпользователь для Django Admin (URL см. realestate_site/urls.py → internal-admin-only)
     admin_user, _ = User.objects.get_or_create(
@@ -113,7 +100,6 @@ def main():
             "latitude": 55.7577,
             "longitude": 37.6156,
             "is_featured": True,
-            "image_colors": [(52, 64, 78), (62, 78, 94), (48, 58, 72)],
         },
         {
             "title": "Офисный блок в деловом квартале",
@@ -132,7 +118,6 @@ def main():
             "latitude": 59.965,
             "longitude": 30.311,
             "is_featured": False,
-            "image_colors": [(58, 70, 86), (68, 84, 100), (44, 54, 68)],
         },
         {
             "title": "Дом с участком и террасой",
@@ -151,7 +136,6 @@ def main():
             "latitude": 55.865,
             "longitude": 49.08,
             "is_featured": True,
-            "image_colors": [(55, 68, 82), (65, 80, 96), (50, 60, 74)],
         },
         {
             "title": "Студия рядом с набережной",
@@ -170,7 +154,6 @@ def main():
             "latitude": 55.7264,
             "longitude": 37.5786,
             "is_featured": False,
-            "image_colors": [(54, 66, 80), (64, 76, 92), (46, 56, 70)],
         },
         {
             "title": "Торговое помещение на первой линии",
@@ -189,45 +172,14 @@ def main():
             "latitude": 59.9322,
             "longitude": 30.3466,
             "is_featured": False,
-            "image_colors": [(56, 68, 84), (66, 82, 98), (48, 58, 72)],
         },
     ]
 
-    for prop_index, item in enumerate(properties):
-        image_colors = item.pop("image_colors")
+    for _, item in enumerate(properties):
         prop, _ = Property.objects.update_or_create(title=item["title"], defaults=item)
         if prop.realtor_id != realtor_profile.id:
             prop.realtor = realtor_profile
             prop.save(update_fields=["realtor"])
-        PropertyImage.objects.filter(property=prop).delete()
-        for idx, rgb in enumerate(image_colors):
-            pi = PropertyImage(
-                property=prop,
-                caption=f"{prop.title} · фото {idx + 1}",
-            )
-            disk = DEMO_IMAGES / "properties" / f"p{prop_index}_{idx}.jpg"
-            if disk.is_file() and disk.stat().st_size > 500:
-                raw = disk.read_bytes()
-            else:
-                raw = jpeg_placeholder(rgb)
-            pi.image.save(f"demo_{prop.id}_{idx}.jpg", ContentFile(raw), save=False)
-            pi.save()
-
-    CompanyGalleryImage.objects.all().delete()
-    gallery_rows = [
-        ("Команда и офис", (46, 58, 72)),
-        ("Подбор объектов", (58, 72, 88)),
-        ("Сделка под ключ", (40, 50, 64)),
-    ]
-    for order, (caption, rgb) in enumerate(gallery_rows):
-        g = CompanyGalleryImage(caption=caption, sort_order=order)
-        disk = DEMO_IMAGES / f"gallery_{order}.jpg"
-        if disk.is_file() and disk.stat().st_size > 500:
-            raw = disk.read_bytes()
-        else:
-            raw = jpeg_placeholder(rgb, w=1400, h=900)
-        g.image.save(f"gallery_{order}.jpg", ContentFile(raw), save=False)
-        g.save()
 
     LeadInquiry.objects.update_or_create(
         full_name="Анна Серова",
