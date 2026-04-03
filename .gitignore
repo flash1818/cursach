@@ -18,11 +18,10 @@ venv_broken_py313/
 .venv/
 
 # Django
-db.sqlite3
 db.sqlite3-journal
 *.log
 staticfiles/
-media/
+# media/ — в репозитории, чтобы на GitHub были загрузки из админки (курсовой проект)
 
 # --- Node / Vite / React ---
 frontend/node_modules/
