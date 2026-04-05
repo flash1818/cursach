@@ -1,10 +1,16 @@
-from django.db.models import Avg, Count, Max
+from decimal import Decimal
+
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, IntegerField, Max, Q, Value
+from django.db.models.functions import Abs
 from django.utils import timezone
-from django.shortcuts import redirect, render
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from rest_framework import filters, permissions, status, viewsets
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS
 from rest_framework.exceptions import PermissionDenied
@@ -12,8 +18,27 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import City, Client, CompanyGalleryImage, Deal, District, Favorite, LeadInquiry, Notification, Property, PropertyImage, PropertyType, Realtor
-from .auth import CsrfExemptSessionAuthentication
+from .chat_utils import (
+    broadcast_listing_chat_message,
+    process_listing_chat_message,
+    user_can_access_property_chat,
+)
+from .models import (
+    City,
+    Client,
+    CompanyGalleryImage,
+    Deal,
+    District,
+    Favorite,
+    LeadInquiry,
+    ListingStats,
+    Notification,
+    Property,
+    PropertyChatMessage,
+    PropertyImage,
+    PropertyType,
+    Realtor,
+)
 from .serializers import (
     CitySerializer,
     CompanyGalleryImageSerializer,
@@ -21,12 +46,328 @@ from .serializers import (
     FavoriteSerializer,
     LeadInquirySerializer,
     LoginSerializer,
+    PropertyChatMessageSerializer,
     PropertyImageSerializer,
     PropertySerializer,
     PropertyTypeSerializer,
     RegisterSerializer,
+    SimilarPropertySerializer,
     UserSerializer,
 )
+
+
+def record_property_view(prop: Property) -> None:
+    now = timezone.now()
+    stats, created = ListingStats.objects.get_or_create(
+        property=prop,
+        defaults={
+            "view_count": 1,
+            "inquiry_count": 0,
+            "first_view_at": now,
+            "last_view_at": now,
+        },
+    )
+    if not created:
+        ListingStats.objects.filter(pk=stats.pk).update(view_count=F("view_count") + 1, last_view_at=now)
+
+
+def record_property_inquiry(prop: Property) -> None:
+    ListingStats.objects.get_or_create(
+        property=prop,
+        defaults={"view_count": 0, "inquiry_count": 0},
+    )
+    ListingStats.objects.filter(property=prop).update(inquiry_count=F("inquiry_count") + 1)
+
+
+def _annotate_similar_order(qs, base: Property, station_ids: list[int]):
+    if station_ids:
+        qs = qs.annotate(
+            _mc=Count("metro_links", filter=Q(metro_links__station_id__in=station_ids), distinct=True)
+        )
+    else:
+        qs = qs.annotate(_mc=Value(0, output_field=IntegerField()))
+    return qs.annotate(_pd=Abs(F("price") - base.price)).order_by("-_mc", "_pd")
+
+
+def _similar_extend(take: list, seen: set, qs, base: Property, station_ids: list[int], limit: int = 3):
+    cand = _annotate_similar_order(qs, base, station_ids)
+    for row in cand:
+        if row.pk in seen:
+            continue
+        take.append(row)
+        seen.add(row.pk)
+        if len(take) >= limit:
+            break
+    return take, seen
+
+
+class SimilarPropertiesView(APIView):
+    """До 3 похожих: город, сделка, комнаты (с ослаблением), цена, этаж, метро."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, pk):
+        base = get_object_or_404(
+            Property.objects.select_related("city").prefetch_related("metro_links"),
+            pk=pk,
+        )
+        station_ids = list(base.metro_links.values_list("station_id", flat=True))
+
+        def pool(same_rooms: bool):
+            qs = (
+                Property.objects.filter(city_id=base.city_id, deal_type=base.deal_type)
+                .exclude(pk=base.pk)
+                .exclude(status__in=["sold", "archived"])
+                .select_related("city")
+                .prefetch_related("images", "metro_links")
+            )
+            if same_rooms and base.rooms is not None:
+                qs = qs.filter(rooms=base.rooms)
+            return qs
+
+        take = []
+        seen = set()
+
+        for low_m, high_m in (
+            (Decimal("0.88"), Decimal("1.12")),
+            (Decimal("0.78"), Decimal("1.22")),
+            (Decimal("0.68"), Decimal("1.32")),
+            (Decimal("0.58"), Decimal("1.45")),
+        ):
+            qs = pool(True).filter(price__gte=base.price * low_m, price__lte=base.price * high_m)
+            if base.floor is not None:
+                qs = qs.filter(
+                    Q(floor__isnull=True) | Q(floor__gte=base.floor - 3, floor__lte=base.floor + 3)
+                )
+            take, seen = _similar_extend(take, seen, qs, base, station_ids)
+            if len(take) >= 3:
+                break
+
+        if len(take) < 3:
+            take, seen = _similar_extend(take, seen, pool(True), base, station_ids)
+
+        if len(take) < 3 and base.rooms is not None:
+            for low_m, high_m in ((Decimal("0.72"), Decimal("1.28")), (Decimal("0.55"), Decimal("1.5"))):
+                qs = pool(False).filter(price__gte=base.price * low_m, price__lte=base.price * high_m)
+                take, seen = _similar_extend(take, seen, qs, base, station_ids)
+                if len(take) >= 3:
+                    break
+
+        if len(take) < 3:
+            take, seen = _similar_extend(take, seen, pool(False), base, station_ids)
+
+        ser = SimilarPropertySerializer(take[:3], many=True, context={"request": request})
+        return Response(ser.data)
+
+
+class PropertyChatView(APIView):
+    """История и отправка сообщений по объекту (дублирует логику WebSocket для кабинетов)."""
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = (SessionAuthentication,)
+
+    def get(self, request, pk):
+        prop = get_object_or_404(
+            Property.objects.select_related("city", "realtor"),
+            pk=pk,
+        )
+        if not user_can_access_property_chat(request.user, prop):
+            return Response(
+                {"detail": "Нет доступа к чату по этому объекту."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        msgs = (
+            PropertyChatMessage.objects.filter(property=prop)
+            .select_related("sender")
+            .order_by("created_at")
+        )
+        return Response(PropertyChatMessageSerializer(msgs, many=True).data)
+
+    def post(self, request, pk):
+        prop = get_object_or_404(Property, pk=pk)
+        if not user_can_access_property_chat(request.user, prop):
+            return Response({"detail": "Нет доступа."}, status=status.HTTP_403_FORBIDDEN)
+        body = (request.data.get("message") if isinstance(request.data, dict) else None) or ""
+        try:
+            msg = process_listing_chat_message(pk, request.user, body)
+        except Property.DoesNotExist:
+            return Response({"detail": "Объект не найден."}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        payload = {
+            "message": msg.body,
+            "username": request.user.get_username(),
+            "id": msg.id,
+            "created_at": msg.created_at.isoformat(),
+        }
+        broadcast_listing_chat_message(pk, payload)
+        return Response(PropertyChatMessageSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+
+class MyChatThreadsView(APIView):
+    """Список диалогов для клиента (избранное + переписка) или риэлтора (объекты с сообщениями)."""
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = (SessionAuthentication,)
+
+    def get(self, request):
+        user = request.user
+        prop_by_id = {}
+
+        if hasattr(user, "realtor_profile"):
+            r = user.realtor_profile
+            for p in (
+                Property.objects.filter(realtor=r, chat_messages__isnull=False)
+                .distinct()
+                .select_related("city")
+            ):
+                prop_by_id[p.id] = p
+        elif hasattr(user, "client_profile"):
+            cp = user.client_profile
+            ids = set(PropertyChatMessage.objects.filter(sender=user).values_list("property_id", flat=True))
+            ids.update(Favorite.objects.filter(client=cp).values_list("property_id", flat=True))
+            for p in Property.objects.filter(pk__in=ids).select_related("city"):
+                prop_by_id[p.id] = p
+        else:
+            return Response({"threads": []})
+
+        threads = []
+        for p in prop_by_id.values():
+            last = (
+                PropertyChatMessage.objects.filter(property=p)
+                .select_related("sender")
+                .order_by("-created_at")
+                .first()
+            )
+            threads.append(
+                {
+                    "property_id": p.id,
+                    "title": p.title,
+                    "city_name": p.city.name if p.city_id else "",
+                    "last_message": (last.body[:240] if last else ""),
+                    "last_at": last.created_at.isoformat() if last else None,
+                    "last_sender": last.sender.get_username() if last else "",
+                    "has_messages": last is not None,
+                }
+            )
+
+        threads.sort(
+            key=lambda t: t["last_at"] or "1970-01-01T00:00:00+00:00",
+            reverse=True,
+        )
+        return Response({"threads": threads})
+
+
+class MyRealtorStatsDashboardView(APIView):
+    """Просмотры, заявки «К сделке», конверсия и среднее время до закрытия сделки."""
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = (SessionAuthentication,)
+
+    def get(self, request):
+        try:
+            realtor = request.user.realtor_profile
+        except Realtor.DoesNotExist:
+            return Response({"detail": "Доступно только риэлторам."}, status=status.HTTP_403_FORBIDDEN)
+
+        props = (
+            Property.objects.filter(realtor=realtor)
+            .select_related("city")
+            .prefetch_related("listing_stats")
+            .order_by("-created_at")
+        )
+
+        listings_payload = []
+        total_views = 0
+        total_inquiries = 0
+
+        for p in props:
+            try:
+                st = p.listing_stats
+            except ListingStats.DoesNotExist:
+                st = None
+            views = st.view_count if st else 0
+            inq = st.inquiry_count if st else 0
+            total_views += views
+            total_inquiries += inq
+            conv = round((inq / views) * 100, 1) if views else 0.0
+
+            closed = Deal.objects.filter(property=p, status="closed").exclude(closed_at__isnull=True)
+            avg_days = None
+            if closed.exists():
+                agg = closed.annotate(
+                    dur=ExpressionWrapper(F("closed_at") - F("created_at"), output_field=DurationField())
+                ).aggregate(avg=Avg("dur"))
+                if agg["avg"] is not None:
+                    avg_days = round(agg["avg"].total_seconds() / 86400, 1)
+
+            listings_payload.append(
+                {
+                    "property_id": p.id,
+                    "title": p.title,
+                    "views": views,
+                    "inquiries": inq,
+                    "conversion_pct": conv,
+                    "avg_days_to_close": avg_days,
+                }
+            )
+
+        all_closed = Deal.objects.filter(realtor=realtor, status="closed").exclude(closed_at__isnull=True)
+        global_avg_days = None
+        if all_closed.exists():
+            gagg = all_closed.annotate(
+                dur=ExpressionWrapper(F("closed_at") - F("created_at"), output_field=DurationField())
+            ).aggregate(avg=Avg("dur"))
+            if gagg["avg"] is not None:
+                global_avg_days = round(gagg["avg"].total_seconds() / 86400, 1)
+
+        summary = {
+            "total_views": total_views,
+            "total_inquiries": total_inquiries,
+            "overall_conversion_pct": round((total_inquiries / total_views) * 100, 1) if total_views else 0.0,
+            "avg_days_to_close_all": global_avg_days,
+        }
+
+        return Response({"listings": listings_payload, "summary": summary})
+
+
+class BulkPhotoUploadView(APIView):
+    """Массовая загрузка фото (multipart, поле images)."""
+
+    permission_classes = [IsAuthenticated]
+    authentication_classes = (SessionAuthentication,)
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request):
+        prop_id = request.data.get("property")
+        if not prop_id:
+            return Response({"detail": "Укажите property."}, status=status.HTTP_400_BAD_REQUEST)
+        prop = get_object_or_404(Property, pk=prop_id)
+        user = request.user
+        if not hasattr(user, "realtor_profile") or prop.realtor_id != user.realtor_profile.id:
+            return Response({"detail": "Нет доступа к этому объекту."}, status=status.HTTP_403_FORBIDDEN)
+
+        files = request.FILES.getlist("images")
+        if not files:
+            return Response({"detail": "Добавьте файлы в поле images."}, status=status.HTTP_400_BAD_REQUEST)
+
+        caption = f"Загружено {user.get_username()}"
+        ids = []
+        for f in files[:20]:
+            img = PropertyImage.objects.create(property=prop, image=f, caption=caption)
+            ids.append(img.id)
+
+        return Response({"detail": "ok", "ids": ids}, status=status.HTTP_201_CREATED)
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ApiCsrfCookieView(APIView):
+    """Выставляет cookie csrftoken для POST из SPA."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({"detail": "ok"})
 
 
 class PropertyTypeViewSet(viewsets.ModelViewSet):
@@ -143,6 +484,7 @@ def _finalize_deal_interest(user, prop) -> str | None:
         related_property=prop,
         related_client=client,
     )
+    record_property_inquiry(prop)
     return None
 
 
@@ -155,6 +497,18 @@ class PropertyViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ("title", "address", "description", "city__name", "district__name", "property_type__name")
     ordering_fields = ("price", "area", "created_at", "updated_at")
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [AllowAny()]
+        if self.action == "deal_interest":
+            return [IsAuthenticated()]
+        return [IsAuthenticated()]
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        record_property_view(instance)
+        return super().retrieve(request, *args, **kwargs)
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -205,7 +559,7 @@ class PropertyViewSet(viewsets.ModelViewSet):
         methods=["post"],
         url_path="deal-interest",
         permission_classes=[IsAuthenticated],
-        authentication_classes=[CsrfExemptSessionAuthentication],
+        authentication_classes=[SessionAuthentication],
     )
     def deal_interest(self, request, pk=None):
         """
@@ -239,7 +593,7 @@ class MyPropertyViewSet(viewsets.ModelViewSet):
 
     serializer_class = PropertySerializer
     permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = (CsrfExemptSessionAuthentication,)
+    authentication_classes = (SessionAuthentication,)
 
     def get_queryset(self):
         user = self.request.user
@@ -300,7 +654,7 @@ class PropertyImageViewSet(viewsets.ModelViewSet):
     queryset = PropertyImage.objects.select_related("property", "property__realtor").all().order_by("id")
     serializer_class = PropertyImageSerializer
     parser_classes = (MultiPartParser, FormParser, JSONParser)
-    authentication_classes = (CsrfExemptSessionAuthentication,)
+    authentication_classes = (SessionAuthentication,)
     permission_classes = [AllowAny]
 
     def get_permissions(self):
@@ -318,7 +672,12 @@ class PropertyImageViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         prop = serializer.validated_data["property"]
         self._assert_realtor_owns(prop)
-        serializer.save()
+        user = self.request.user
+        cap = (serializer.validated_data.get("caption") or "").strip()
+        if not cap:
+            serializer.save(caption=f"Загружено {user.get_username()}")
+        else:
+            serializer.save()
 
     def perform_update(self, serializer):
         self._assert_realtor_owns(serializer.instance.property)
@@ -439,7 +798,7 @@ class MeView(APIView):
 class FavoriteViewSet(viewsets.ModelViewSet):
     serializer_class = FavoriteSerializer
     permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = (CsrfExemptSessionAuthentication,)
+    authentication_classes = (SessionAuthentication,)
 
     def get_queryset(self):
         user = self.request.user
@@ -748,7 +1107,7 @@ class MyNotificationMetaView(APIView):
     """Для опроса новых уведомлений с страницы профиля (без перезагрузки)."""
 
     permission_classes = [permissions.IsAuthenticated]
-    authentication_classes = (CsrfExemptSessionAuthentication,)
+    authentication_classes = (SessionAuthentication,)
 
     def get(self, request):
         qs = Notification.objects.filter(user=request.user)

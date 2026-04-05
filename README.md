@@ -47,7 +47,7 @@ python -m venv venv
 pip install -r requirements.txt
 python manage.py migrate
 python seed_demo_no_images.py
-python manage.py runserver 0.0.0.0:8000
+python -m daphne -b 0.0.0.0 -p 8000 realestate_site.asgi:application
 ```
 
 ### Frontend (второе окно)
@@ -57,10 +57,11 @@ npm install
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-### Переменные окружения (по желанию)
-- `DJANGO_SECRET_KEY` — секрет Django (для продакшена задайте свой).
+### Переменные окружения
+- В корне проекта создайте файл **`.env`** (в репозиторий он не попадает). Образец полей — **`.env.example`**.
+- **`DJANGO_SECRET_KEY`** — обязательно задайте свой в продакшене; не храните реальные ключи в коде и в коммитах.
 - `USE_POSTGRES=1` и `POSTGRES_*` — если используете PostgreSQL вместо SQLite.
-- Во **frontend** (файл `frontend/.env.local` или переменные сборки): `VITE_YANDEX_MAPS_API_KEY` — ключ [JavaScript API и Геосаджеста](https://developer.tech.yandex.ru/) для карты на витрине; без ключа Яндекс.Карты могут не отображаться.
+- Во **frontend** (`frontend/.env.local` или переменные сборки): **`VITE_YANDEX_MAPS_API_KEY`** — ключ [JavaScript API и Геосаджеста](https://developer.tech.yandex.ru/) для карты; без ключа карта может не отображаться.
 
 ---
 
@@ -85,10 +86,16 @@ npm run dev -- --host 0.0.0.0 --port 5173
 ### Демо-риэлтор (вход на сайт / кабинет)
 
 - **Логин:** `demo_realtor`
-- **Пароль:** `demo_realtor_pass`  
+- **Пароль:** `                                                   `  
 - Страница входа: [http://localhost:8000/auth/login/](http://localhost:8000/auth/login/)
 
-REST API: `http://localhost:8000/api/` (список эндпоинтов см. в коде `listings/urls.py`).
+REST API: `http://localhost:8000/api/` (маршруты в `listings/urls.py`). Примеры:
+- `GET /api/similar/<id>/` — до 3 похожих объектов (город, комнаты, коридор цены, этаж, метро).
+- `GET /api/my/stats/dashboard/` — статистика риэлтора (просмотры, заявки «К сделке», конверсия, срок до закрытия сделки).
+- `POST /api/upload-photo/` — массовая загрузка фото (`multipart`, поля `property`, `images`).
+- `GET /api/auth/csrf/` — выставляет cookie `csrftoken` для POST из SPA.
+
+**WebSocket (чат «Спросить о цене» на витрине):** `ws://localhost:5173/ws/chat/<id>/` через прокси Vite на Daphne. Для WS backend должен работать через **Daphne** (см. `run_project.bat`), а не только `runserver`.
 
 Фронт ходит в API через Vite proxy (`/api`). HTML-страницы входа/профиля проксируются с тем же origin при работе через `localhost:5173`.
 
@@ -102,6 +109,12 @@ REST API: `http://localhost:8000/api/` (список эндпоинтов см. 
 
 ---
 
-## Авторизация
+## Авторизация и CSRF
 
-Используются **session cookies** Django. Для API в dev отключена проверка CSRF на части эндпоинтов — для публичного интернета нужна дополнительная защита.
+Используются **session cookies** Django. Для запросов из React (и fetch в кабинете риэлтора) включена стандартная проверка **CSRF**: при загрузке витрины вызывается `GET /api/auth/csrf/` (`ensure_csrf_cookie`), в браузере появляется cookie `csrftoken`, а POST/DELETE уходят с заголовком **`X-CSRFToken`** и **`credentials: 'include'`** (тот же origin, что и у Vite-прокси).
+
+---
+
+## Позиционирование продукта (кратко для инвестора / заказчика)
+
+Платформа сочетает надёжный бэкенд на Django, современную витрину на React и сценарий полной автономности (в т.ч. запуск с флешки). Поведенческий подбор похожих объектов, чат в реальном времени по объекту, дашборд риэлтора с графиками и массовая загрузка фото на базе уже настроенного `media/` дают заметное UX-преимущество без смены основной архитектуры — конкурентам с «голым» каталогом для догона часто пришлось бы переписывать серверную часть и инфраструктуру (в т.ч. ASGI для WebSocket).

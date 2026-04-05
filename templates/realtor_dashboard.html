@@ -31,8 +31,14 @@
         <a href="#tab-notifications" class="tab-link" onclick="switchTab(event, 'tab-notifications')">
             Уведомления ({{ notifications|length }})
         </a>
+        <a href="#tab-realtor-chats" class="tab-link" onclick="switchTab(event, 'tab-realtor-chats')">
+            Чаты с клиентами
+        </a>
         <a href="#tab-profile" class="tab-link" onclick="switchTab(event, 'tab-profile')">
             Профиль риэлтора
+        </a>
+        <a href="#tab-stats" class="tab-link" onclick="switchTab(event, 'tab-stats')">
+            Статистика
         </a>
     </nav>
 
@@ -133,6 +139,13 @@
             <p class="muted" style="margin-bottom:10px;font-size:12px;">
                 Объекты со статусом «Продан» или «Архив» после завершения сделки скрываются отсюда и переносятся в блок ниже.
             </p>
+            <div id="photo-drop-zone" class="photo-drop-zone" style="display:none;margin-bottom:16px;padding:16px;border:1px dashed rgba(148,163,184,0.45);border-radius:12px;">
+                <div class="field-label">Массовая загрузка фото (перетаскивание)</div>
+                <select id="bulk-photo-property-select" class="field-input" style="max-width:420px;margin:8px 0;">
+                    <option value="">— Выберите объект —</option>
+                </select>
+                <p class="muted" style="font-size:11px;margin:0 0 8px;">Перетащите изображения в эту область (до 20 за раз). Подпись «Загружено …» проставится автоматически.</p>
+            </div>
             <div id="realtor-properties-list" class="profile-list"></div>
             <p id="realtor-properties-empty" class="muted" style="display:none;">
                 У вас пока нет активных объектов. Создайте новый или завершите сделку — тогда объект окажется в скрытом списке.
@@ -301,6 +314,55 @@
         {% endif %}
     </section>
 
+    <section id="tab-realtor-chats" class="profile-tab-panel" style="display:none;">
+        <p class="muted" style="margin-bottom:12px;font-size:12px;">
+            Сообщения из витрины и из профилей клиентов по вашим объектам. Каждое новое сообщение клиента также попадает в «Уведомления».
+        </p>
+        <div id="realtor-chat-threads" class="profile-list" style="flex-direction:column;"></div>
+        <p id="realtor-chat-empty" class="muted" style="display:none;">Пока нет переписок — как только клиент напишет в чат по объекту, диалог появится здесь.</p>
+        <div id="realtor-chat-active" style="display:none;margin-top:16px;padding:16px;border:1px solid rgba(148,163,184,0.25);border-radius:12px;">
+            <div class="field-label" id="realtor-chat-title"></div>
+            <div id="realtor-chat-messages" style="max-height:260px;overflow-y:auto;margin:10px 0;font-size:14px;line-height:1.45;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <input type="text" id="realtor-chat-input" class="field-input" style="flex:1;min-width:200px;" placeholder="Ответ клиенту…" maxlength="2000">
+                <button type="button" class="nav-btn" onclick="realtorChatSend();">Отправить</button>
+                <button type="button" class="nav-btn-secondary" onclick="realtorChatClose();">Свернуть</button>
+            </div>
+        </div>
+    </section>
+
+    <section id="tab-stats" class="profile-tab-panel" style="display:none;">
+        <p class="muted" style="margin-bottom:12px;font-size:12px;">
+            Просмотры карточек и запросы «К сделке»; конверсия и среднее время до закрытия сделки (по вашим объектам).
+        </p>
+        <div class="profile-grid" style="margin-bottom:16px;">
+            <div class="profile-item" style="flex-direction:column;align-items:stretch;">
+                <div class="field-label">Всего просмотров</div>
+                <div id="stat-total-views" class="profile-title" style="font-size:22px;">—</div>
+            </div>
+            <div class="profile-item" style="flex-direction:column;align-items:stretch;">
+                <div class="field-label">Запросов «К сделке»</div>
+                <div id="stat-total-inquiries" class="profile-title" style="font-size:22px;">—</div>
+            </div>
+            <div class="profile-item" style="flex-direction:column;align-items:stretch;">
+                <div class="field-label">Конверсия просмотр → заявка</div>
+                <div id="stat-conversion" class="profile-title" style="font-size:22px;">—</div>
+            </div>
+            <div class="profile-item" style="flex-direction:column;align-items:stretch;">
+                <div class="field-label">Среднее дней до закрытия сделки</div>
+                <div id="stat-avg-days" class="profile-title" style="font-size:22px;">—</div>
+            </div>
+        </div>
+        <div style="margin-bottom:20px;">
+            <div class="field-label" style="margin-bottom:8px;">Просмотры по объектам</div>
+            <canvas id="chart-views" height="120"></canvas>
+        </div>
+        <div style="margin-bottom:20px;">
+            <div class="field-label" style="margin-bottom:8px;">Конверсия по объектам (%)</div>
+            <canvas id="chart-conversion" height="120"></canvas>
+        </div>
+    </section>
+
     <section id="tab-profile" class="profile-tab-panel" style="display:none;">
         <div class="profile-grid">
             <div>
@@ -353,7 +415,134 @@
     </div>
 </section>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
+    let chartViewsInstance = null;
+    let chartConvInstance = null;
+
+    function readCookie(name) {
+        const parts = ('; ' + document.cookie).split('; ' + name + '=');
+        if (parts.length === 2) {
+            return decodeURIComponent(parts.pop().split(';').shift() || '');
+        }
+        return '';
+    }
+
+    async function ensureApiCsrf() {
+        await fetch('/api/auth/csrf/', { credentials: 'same-origin' });
+    }
+
+    let realtorChatPropertyId = null;
+
+    function escapeHtmlRealtor(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    async function loadRealtorChatThreads() {
+        const root = document.getElementById('realtor-chat-threads');
+        const empty = document.getElementById('realtor-chat-empty');
+        if (!root) {
+            return;
+        }
+        root.innerHTML = '';
+        try {
+            await ensureApiCsrf();
+            const r = await fetch('/api/my/chat/threads/', {
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await r.json();
+            const threads = (data && data.threads) || [];
+            if (!threads.length) {
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            threads.forEach(function (t) {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'profile-item';
+                row.style.cssText = 'width:100%;text-align:left;cursor:pointer;background:rgba(15,23,42,0.4);border:1px solid rgba(148,163,184,0.25);border-radius:10px;padding:12px;margin-bottom:8px;color:inherit;font:inherit;';
+                row.innerHTML =
+                    '<div class="profile-item-title">' + escapeHtmlRealtor(t.title) + '</div>' +
+                    '<div class="muted" style="font-size:11px;">' + escapeHtmlRealtor(t.city_name) + '</div>' +
+                    (t.last_message
+                        ? '<div style="margin-top:6px;font-size:12px;">' + escapeHtmlRealtor(t.last_message.slice(0, 160)) + '</div>'
+                        : '');
+                row.onclick = function () {
+                    openRealtorChat(t.property_id, t.title);
+                };
+                root.appendChild(row);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function openRealtorChat(pid, title) {
+        realtorChatPropertyId = pid;
+        document.getElementById('realtor-chat-active').style.display = 'block';
+        document.getElementById('realtor-chat-title').textContent = title;
+        const box = document.getElementById('realtor-chat-messages');
+        box.innerHTML = 'Загрузка…';
+        await ensureApiCsrf();
+        const r = await fetch('/api/properties/' + pid + '/chat/', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        });
+        const msgs = await r.json();
+        if (!Array.isArray(msgs)) {
+            box.innerHTML = 'Ошибка загрузки (код ' + r.status + ').';
+            return;
+        }
+        box.innerHTML = '';
+        msgs.forEach(function (m) {
+            const line = document.createElement('div');
+            line.style.marginBottom = '10px';
+            line.innerHTML = '<strong>' + escapeHtmlRealtor(m.sender_username) + ':</strong> ' + escapeHtmlRealtor(m.body);
+            box.appendChild(line);
+        });
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function realtorChatClose() {
+        realtorChatPropertyId = null;
+        document.getElementById('realtor-chat-active').style.display = 'none';
+    }
+
+    async function realtorChatSend() {
+        if (!realtorChatPropertyId) {
+            return;
+        }
+        const inp = document.getElementById('realtor-chat-input');
+        const text = (inp.value || '').trim();
+        if (!text) {
+            return;
+        }
+        await ensureApiCsrf();
+        const r = await fetch('/api/properties/' + realtorChatPropertyId + '/chat/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': readCookie('csrftoken')
+            },
+            body: JSON.stringify({ message: text })
+        });
+        if (r.ok) {
+            inp.value = '';
+            const titleEl = document.getElementById('realtor-chat-title');
+            openRealtorChat(realtorChatPropertyId, titleEl ? titleEl.textContent : '');
+            loadRealtorChatThreads();
+        } else {
+            const err = await r.json().catch(function () { return {}; });
+            alert(err.detail || 'Ошибка отправки');
+        }
+    }
+
     function switchTab(event, id) {
         event.preventDefault();
         document.querySelectorAll('.profile-tab-panel').forEach(function (el) {
@@ -362,6 +551,12 @@
         document.querySelectorAll('.profile-tabs .tab-link').forEach(function (el) {
             el.classList.toggle('active', el.getAttribute('href').slice(1) === id);
         });
+        if (id === 'tab-stats') {
+            loadStatsDashboard();
+        }
+        if (id === 'tab-realtor-chats') {
+            loadRealtorChatThreads();
+        }
     }
 
     function openCreatePropertyModal() {
@@ -390,12 +585,14 @@
     }
 
     async function apiSend(path, method, bodyObj) {
+        await ensureApiCsrf();
         const resp = await fetch(path, {
             method: method,
             credentials: 'include',
             headers: {
                 'Accept': 'application/json',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': readCookie('csrftoken') || ''
             },
             body: bodyObj ? JSON.stringify(bodyObj) : null
         });
@@ -405,6 +602,116 @@
             throw new Error(msg);
         }
         return data;
+    }
+
+    async function uploadPhotosBulk(propertyId, fileList) {
+        if (!propertyId || !fileList || !fileList.length) return;
+        await ensureApiCsrf();
+        const fd = new FormData();
+        fd.append('property', String(propertyId));
+        for (let i = 0; i < fileList.length && i < 20; i++) {
+            fd.append('images', fileList[i]);
+        }
+        const resp = await fetch('/api/upload-photo/', {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRFToken': readCookie('csrftoken') || ''
+            }
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            throw new Error(data.detail || 'Ошибка загрузки ' + resp.status);
+        }
+        return data;
+    }
+
+    function setupPhotoDropZone() {
+        const zone = document.getElementById('photo-drop-zone');
+        if (!zone) return;
+        zone.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            zone.style.borderColor = 'rgba(96,165,250,0.7)';
+        });
+        zone.addEventListener('dragleave', function () {
+            zone.style.borderColor = 'rgba(148,163,184,0.45)';
+        });
+        zone.addEventListener('drop', async function (e) {
+            e.preventDefault();
+            zone.style.borderColor = 'rgba(148,163,184,0.45)';
+            const select = document.getElementById('bulk-photo-property-select');
+            const pid = select && select.value;
+            if (!pid) {
+                alert('Выберите объект в списке выше.');
+                return;
+            }
+            const files = e.dataTransfer && e.dataTransfer.files;
+            if (!files || !files.length) return;
+            try {
+                await uploadPhotosBulk(pid, files);
+                alert('Загружено файлов: ' + Math.min(files.length, 20));
+            } catch (err) {
+                alert('Ошибка: ' + err.message);
+            }
+        });
+    }
+
+    async function loadStatsDashboard() {
+        try {
+            const data = await apiGet('/api/my/stats/dashboard/');
+            const s = data.summary || {};
+            document.getElementById('stat-total-views').textContent = s.total_views != null ? s.total_views : '—';
+            document.getElementById('stat-total-inquiries').textContent = s.total_inquiries != null ? s.total_inquiries : '—';
+            document.getElementById('stat-conversion').textContent =
+                s.overall_conversion_pct != null ? s.overall_conversion_pct + '%' : '—';
+            document.getElementById('stat-avg-days').textContent =
+                s.avg_days_to_close_all != null ? s.avg_days_to_close_all : '—';
+
+            const listings = data.listings || [];
+            const labels = listings.map(function (x) {
+                const t = x.title || '';
+                return t.length > 28 ? t.slice(0, 26) + '…' : t;
+            });
+            const views = listings.map(function (x) { return x.views || 0; });
+            const conv = listings.map(function (x) { return x.conversion_pct || 0; });
+
+            const ctx1 = document.getElementById('chart-views');
+            const ctx2 = document.getElementById('chart-conversion');
+            if (chartViewsInstance) chartViewsInstance.destroy();
+            if (chartConvInstance) chartConvInstance.destroy();
+            if (ctx1 && typeof Chart !== 'undefined') {
+                chartViewsInstance = new Chart(ctx1, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{ label: 'Просмотры', data: views, backgroundColor: 'rgba(96,165,250,0.55)' }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+            }
+            if (ctx2 && typeof Chart !== 'undefined') {
+                chartConvInstance = new Chart(ctx2, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{ label: 'Конверсия %', data: conv, backgroundColor: 'rgba(52,211,153,0.55)' }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, max: 100 } }
+                    }
+                });
+            }
+        } catch (e) {
+            console.error(e);
+        }
     }
 
     async function loadChoices() {
@@ -456,14 +763,29 @@
     async function loadRealtorProperties() {
         const list = document.getElementById('realtor-properties-list');
         const emptyLabel = document.getElementById('realtor-properties-empty');
+        const bulkSelect = document.getElementById('bulk-photo-property-select');
+        const dropZone = document.getElementById('photo-drop-zone');
         list.innerHTML = '';
+        if (bulkSelect) {
+            bulkSelect.innerHTML = '<option value=\"\">— Выберите объект —</option>';
+        }
         try {
             const data = await apiGet('/api/my/properties/');
             if (!data.length) {
                 emptyLabel.style.display = 'block';
+                if (dropZone) dropZone.style.display = 'none';
                 return;
             }
             emptyLabel.style.display = 'none';
+            if (dropZone) dropZone.style.display = 'block';
+            data.forEach(function (p) {
+                if (bulkSelect) {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.title;
+                    bulkSelect.appendChild(opt);
+                }
+            });
             data.forEach(p => {
                 const row = document.createElement('div');
                 row.className = 'profile-item';
@@ -542,11 +864,15 @@
             fd.append('image', file);
             fd.append('caption', '');
             try {
+                await ensureApiCsrf();
                 const resp = await fetch('/api/property-images/', {
                     method: 'POST',
                     body: fd,
                     credentials: 'include',
-                    headers: { 'Accept': 'application/json' }
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRFToken': readCookie('csrftoken') || ''
+                    }
                 });
                 const data = await resp.json().catch(function () { return {}; });
                 if (!resp.ok) {
@@ -618,9 +944,12 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        loadChoices();
-        loadRealtorProperties();
-        loadHiddenProperties();
+        ensureApiCsrf().then(function () {
+            loadChoices();
+            loadRealtorProperties();
+            loadHiddenProperties();
+            setupPhotoDropZone();
+        });
     });
 </script>
 {% include "includes/notification_poll.html" %}

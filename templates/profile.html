@@ -32,6 +32,9 @@
         <a href="#tab-notifications" class="tab-link" onclick="switchTab(event, 'tab-notifications')">
             Уведомления ({{ notifications|length }})
         </a>
+        <a href="#tab-chats" class="tab-link" onclick="switchTab(event, 'tab-chats')">
+            Чаты с риэлтором
+        </a>
     </nav>
 
     <div class="divider"></div>
@@ -167,6 +170,23 @@
         </details>
     </section>
 
+    <section id="tab-chats" class="profile-tab-panel" style="display:none;">
+        <p class="muted" style="margin-bottom:12px;font-size:12px;">
+            Диалоги по объектам из избранного и по тем, где вы уже писали. Каждое сообщение уходит ответственному риэлтору и дублируется в «Уведомления».
+        </p>
+        <div id="client-chat-threads" class="profile-list" style="flex-direction:column;"></div>
+        <p id="client-chat-empty" class="muted" style="display:none;">Пока нет чатов — добавьте объект в избранное на витрине или напишите из карточки объекта.</p>
+        <div id="client-chat-active" style="display:none;margin-top:16px;padding:16px;border:1px solid rgba(148,163,184,0.25);border-radius:12px;">
+            <div class="field-label" id="client-chat-title"></div>
+            <div id="client-chat-messages" style="max-height:240px;overflow-y:auto;margin:10px 0;font-size:14px;line-height:1.45;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <input type="text" id="client-chat-input" class="field-input" style="flex:1;min-width:200px;" placeholder="Сообщение риэлтору…" maxlength="2000">
+                <button type="button" class="nav-btn" onclick="clientChatSend();">Отправить</button>
+                <button type="button" class="nav-btn-secondary" onclick="clientChatClose();">Свернуть</button>
+            </div>
+        </div>
+    </section>
+
     <section id="tab-notifications" class="profile-tab-panel" style="display:none;">
         {% if notifications %}
             <div class="notif-toolbar">
@@ -224,6 +244,26 @@
 </section>
 
 <script>
+    var clientChatPropertyId = null;
+
+    function readCookie(name) {
+        var parts = ('; ' + document.cookie).split('; ' + name + '=');
+        if (parts.length === 2) {
+            return decodeURIComponent(parts.pop().split(';').shift() || '');
+        }
+        return '';
+    }
+
+    async function ensureApiCsrf() {
+        await fetch('/api/auth/csrf/', { credentials: 'same-origin' });
+    }
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
     function switchTab(event, id) {
         event.preventDefault();
         document.querySelectorAll('.profile-tab-panel').forEach(function (el) {
@@ -232,6 +272,112 @@
         document.querySelectorAll('.profile-tabs .tab-link').forEach(function (el) {
             el.classList.toggle('active', el.getAttribute('href').slice(1) === id);
         });
+        if (id === 'tab-chats') {
+            loadClientChatThreads();
+        }
+    }
+
+    async function loadClientChatThreads() {
+        var root = document.getElementById('client-chat-threads');
+        var empty = document.getElementById('client-chat-empty');
+        if (!root) {
+            return;
+        }
+        root.innerHTML = '';
+        try {
+            await ensureApiCsrf();
+            var r = await fetch('/api/my/chat/threads/', {
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
+            });
+            var data = await r.json();
+            var threads = (data && data.threads) || [];
+            if (!threads.length) {
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+            threads.forEach(function (t) {
+                var row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'profile-item';
+                row.style.cssText = 'width:100%;text-align:left;cursor:pointer;background:rgba(15,23,42,0.4);border:1px solid rgba(148,163,184,0.25);border-radius:10px;padding:12px;margin-bottom:8px;color:inherit;font:inherit;';
+                row.innerHTML =
+                    '<div class="profile-item-title">' + escapeHtml(t.title) + '</div>' +
+                    '<div class="muted" style="font-size:11px;">' + escapeHtml(t.city_name) + '</div>' +
+                    (t.last_message
+                        ? '<div style="margin-top:6px;font-size:12px;opacity:.9;">' + escapeHtml(t.last_message.slice(0, 140)) + '</div>'
+                        : '<div class="muted" style="margin-top:6px;font-size:11px;">Напишите первым</div>');
+                row.onclick = function () {
+                    openClientChat(t.property_id, t.title);
+                };
+                root.appendChild(row);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function openClientChat(pid, title) {
+        clientChatPropertyId = pid;
+        document.getElementById('client-chat-active').style.display = 'block';
+        document.getElementById('client-chat-title').textContent = title;
+        var box = document.getElementById('client-chat-messages');
+        box.innerHTML = 'Загрузка…';
+        await ensureApiCsrf();
+        var r = await fetch('/api/properties/' + pid + '/chat/', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        });
+        var msgs = await r.json();
+        if (!Array.isArray(msgs)) {
+            box.innerHTML = 'Не удалось загрузить сообщения (код ' + r.status + ').';
+            return;
+        }
+        box.innerHTML = '';
+        msgs.forEach(function (m) {
+            var line = document.createElement('div');
+            line.style.marginBottom = '10px';
+            line.innerHTML = '<strong>' + escapeHtml(m.sender_username) + ':</strong> ' + escapeHtml(m.body);
+            box.appendChild(line);
+        });
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function clientChatClose() {
+        clientChatPropertyId = null;
+        document.getElementById('client-chat-active').style.display = 'none';
+    }
+
+    async function clientChatSend() {
+        if (!clientChatPropertyId) {
+            return;
+        }
+        var inp = document.getElementById('client-chat-input');
+        var text = (inp.value || '').trim();
+        if (!text) {
+            return;
+        }
+        await ensureApiCsrf();
+        var r = await fetch('/api/properties/' + clientChatPropertyId + '/chat/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': readCookie('csrftoken')
+            },
+            body: JSON.stringify({ message: text })
+        });
+        if (r.ok) {
+            inp.value = '';
+            var titleEl = document.getElementById('client-chat-title');
+            openClientChat(clientChatPropertyId, titleEl ? titleEl.textContent : '');
+            loadClientChatThreads();
+        } else {
+            var err = await r.json().catch(function () { return {}; });
+            alert(err.detail || 'Ошибка отправки');
+        }
     }
 </script>
 {% include "includes/notification_poll.html" %}

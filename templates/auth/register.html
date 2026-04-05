@@ -53,10 +53,15 @@
                 <input type="hidden" name="role" value="client">
             </div>
             <div>
-                <div class="field-label">Телефон</div>
-                <input type="text" name="phone" class="field-input"
-                       placeholder="+7 ..."
+                <div class="field-label">Телефон (РФ)</div>
+                <input type="tel" name="phone" id="reg-phone" class="field-input"
+                       inputmode="numeric" autocomplete="tel"
+                       placeholder="+7 (900) 123-45-67"
+                       maxlength="18"
                        value="{{ form_data.phone|default:'' }}">
+                <p class="muted" style="margin:6px 0 0;font-size:11px;">
+                    Можно ввести 9XXXXXXXXX, 8… или +7… — сохраним в формате +7XXXXXXXXXX.
+                </p>
             </div>
         </div>
 
@@ -77,5 +82,38 @@
         </div>
     </form>
 </section>
+<script>
+(function () {
+    var el = document.getElementById('reg-phone');
+    if (!el) return;
+
+    function digits(s) {
+        return (s || '').replace(/\D/g, '');
+    }
+
+    function formatMask(d) {
+        if (!d.length) return '';
+        var x = d;
+        if (x[0] === '8') x = '7' + x.slice(1);
+        if (x.length === 10 && x[0] === '9') x = '7' + x;
+        if (x[0] !== '7') return '+' + d;
+        x = x.slice(0, 11);
+        var rest = x.slice(1);
+        var out = '+7';
+        if (rest.length) out += ' (' + rest.slice(0, 3);
+        if (rest.length >= 3) out += ') ' + rest.slice(3, 6);
+        if (rest.length > 6) out += '-' + rest.slice(6, 8);
+        if (rest.length > 8) out += '-' + rest.slice(8, 10);
+        return out;
+    }
+
+    el.addEventListener('input', function () {
+        var d = digits(el.value);
+        if (d.startsWith('8')) d = '7' + d.slice(1);
+        if (d.length === 10 && d[0] === '9') d = '7' + d;
+        el.value = formatMask(d);
+    });
+})();
+</script>
 {% endblock %}
 

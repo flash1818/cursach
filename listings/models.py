@@ -354,6 +354,7 @@ class Notification(models.Model):
     class Kind(models.TextChoices):
         GENERIC = "generic", "Общее"
         DEAL_INQUIRY = "deal_inquiry", "Запрос на сделку от клиента"
+        CHAT_MESSAGE = "chat_message", "Сообщение в чате по объекту"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -391,6 +392,52 @@ class Notification(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class PropertyChatMessage(models.Model):
+    """Переписка клиент ↔ риэлтор по конкретному объекту (витрина и кабинеты)."""
+
+    property = models.ForeignKey(
+        Property,
+        on_delete=models.CASCADE,
+        related_name="chat_messages",
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="property_chat_messages",
+    )
+    body = models.TextField(max_length=2000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Сообщение чата по объекту"
+        verbose_name_plural = "Сообщения чата по объектам"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.sender_id} → {self.property_id}"
+
+
+class ListingStats(models.Model):
+    """Просмотры карточки и заявки «К сделке» для дашборда риэлтора."""
+
+    property = models.OneToOneField(
+        Property,
+        on_delete=models.CASCADE,
+        related_name="listing_stats",
+    )
+    view_count = models.PositiveIntegerField(default=0)
+    inquiry_count = models.PositiveIntegerField(default=0)
+    first_view_at = models.DateTimeField(null=True, blank=True)
+    last_view_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Статистика объявления"
+        verbose_name_plural = "Статистика объявлений"
+
+    def __str__(self):
+        return f"Статистика: {self.property.title}"
 
 
 class MarketAnalyticsSnapshot(models.Model):

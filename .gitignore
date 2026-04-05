@@ -17,6 +17,9 @@ venvvenv/
 venv_broken_py313/
 .venv/
 
+# Секреты и локальные ключи (шаблон — `.env.example`)
+.env
+
 # Django
 db.sqlite3-journal
 *.log

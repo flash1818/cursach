@@ -26,8 +26,8 @@ if errorlevel 1 (
     )
 )
 
-echo Backend 0.0.0.0 port 8000
-start "RealEstate-Backend" /D "%ROOT%" cmd /k "set USE_POSTGRES=0&& set PGCLIENTENCODING=UTF8&& venv\Scripts\python.exe -u manage.py runserver 0.0.0.0:8000"
+echo Backend 0.0.0.0 port 8000 (Daphne: HTTP + WebSocket)
+start "RealEstate-Backend" /D "%ROOT%" cmd /k "set USE_POSTGRES=0&& set PGCLIENTENCODING=UTF8&& set DJANGO_SETTINGS_MODULE=realestate_site.settings&& venv\Scripts\daphne.exe -b 0.0.0.0 -p 8000 realestate_site.asgi:application"
 
 echo Frontend 0.0.0.0 port 5173
 start "RealEstate-Frontend" /D "%ROOT%\frontend" cmd /k "npm run dev -- --host 0.0.0.0 --port 5173"

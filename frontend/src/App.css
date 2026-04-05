@@ -1466,3 +1466,117 @@
     height: 220px;
   }
 }
+
+.nav-btn-secondary {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.85);
+  color: #e2e8f0;
+}
+
+.nav-btn-secondary:hover {
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #f8fafc;
+}
+
+.price-chat-panel {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.price-chat-panel .section-label {
+  margin-bottom: 10px;
+}
+
+.price-chat-messages {
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.price-chat-row {
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.price-chat-input-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.price-chat-input-row .field-input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.similar-properties-block {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.similar-properties-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.similar-properties-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.similar-property-card {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.65);
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.similar-property-card:hover {
+  border-color: rgba(96, 165, 250, 0.4);
+}
+
+.similar-property-img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+}
+
+.similar-property-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.similar-property-body strong {
+  font-size: 14px;
+  color: #f1f5f9;
+}
+
+.similar-property-price {
+  font-weight: 700;
+  color: #86efac;
+}

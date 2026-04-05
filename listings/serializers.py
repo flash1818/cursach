@@ -9,6 +9,7 @@ from .models import (
     Favorite,
     LeadInquiry,
     Property,
+    PropertyChatMessage,
     PropertyImage,
     PropertyMetro,
     PropertyType,
@@ -97,6 +98,33 @@ class PropertyMetroSerializer(serializers.ModelSerializer):
             "distance_meters",
             "walking_time_minutes",
         )
+
+
+class PropertyChatMessageSerializer(serializers.ModelSerializer):
+    sender_username = serializers.CharField(source="sender.username", read_only=True)
+
+    class Meta:
+        model = PropertyChatMessage
+        fields = ("id", "body", "sender_username", "created_at")
+
+
+class SimilarPropertySerializer(serializers.ModelSerializer):
+    city_name = serializers.CharField(source="city.name", read_only=True)
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Property
+        fields = ("id", "title", "price", "city_name", "rooms", "floor", "deal_type", "image_url")
+
+    def get_image_url(self, obj):
+        img = obj.images.first()
+        if img and img.image:
+            request = self.context.get("request")
+            url = img.image.url
+            if request:
+                return request.build_absolute_uri(url)
+            return url
+        return ""
 
 
 class PropertySerializer(serializers.ModelSerializer):
@@ -211,6 +239,16 @@ class RegisterSerializer(serializers.Serializer):
     # Регистрация на сайте только для клиентов.
     role = serializers.ChoiceField(choices=[("client", "client")], default="client")
     phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
+
+    def validate_phone(self, value):
+        from .phone_utils import normalize_ru_phone
+
+        if not value or not str(value).strip():
+            return ""
+        try:
+            return normalize_ru_phone(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
     def validate_username(self, value):
         if User.objects.filter(username=value).exists():

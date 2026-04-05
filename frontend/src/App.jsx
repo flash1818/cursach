@@ -10,6 +10,21 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const BACKEND_ORIGIN = import.meta.env.VITE_BACKEND_ORIGIN || ''
+
+function readCookie(name) {
+  const safe = name.replace(/[$()*+.?[\\\]^{|}]/g, '\\$&')
+  const m = document.cookie.match(new RegExp(`(?:^|; )${safe}=([^;]*)`))
+  return m ? decodeURIComponent(m[1]) : ''
+}
+
+function csrfHeaderObj(json = false) {
+  const token = readCookie('csrftoken')
+  const headers = { 'X-CSRFToken': token || '' }
+  if (json) {
+    headers['Content-Type'] = 'application/json'
+  }
+  return headers
+}
 /**
  * Ссылки на Django (вход, профиль). На Vite :5173 всегда относительные пути,
  * иначе сессия с localhost:8000 не попадает в fetch('/api/...') с :5173 — «К сделке» и API без авторизации.
@@ -328,6 +343,7 @@ function App() {
   const [favorites, setFavorites] = useState([])
   const [favoritePropertyIds, setFavoritePropertyIds] = useState([])
   const [detailsProperty, setDetailsProperty] = useState(null)
+  const [detailSessionKey, setDetailSessionKey] = useState(0)
   const [activeView, setActiveView] = useState('home')
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [authPromptKind, setAuthPromptKind] = useState('favorite')
@@ -335,6 +351,11 @@ function App() {
   const [detailsPhotoIndex, setDetailsPhotoIndex] = useState(0)
   const detailsSwipeRef = useRef({ x: 0 })
   const [companyGallery, setCompanyGallery] = useState([])
+  const [similarProperties, setSimilarProperties] = useState([])
+  const [priceChatOpen, setPriceChatOpen] = useState(false)
+  const [priceChatMessages, setPriceChatMessages] = useState([])
+  const [priceChatInput, setPriceChatInput] = useState('')
+  const priceChatWsRef = useRef(null)
 
   // если пользователь разлогинился, очищаем избранное
   useEffect(() => {
@@ -347,6 +368,120 @@ function App() {
   useEffect(() => {
     setDetailsPhotoIndex(0)
   }, [detailsProperty?.id])
+
+  useEffect(() => {
+    if (!detailsProperty) {
+      setPriceChatOpen(false)
+      setPriceChatMessages([])
+      setPriceChatInput('')
+    }
+  }, [detailsProperty])
+
+  useEffect(() => {
+    if (!detailsProperty?.id) {
+      setSimilarProperties([])
+      return
+    }
+    if (!remoteProperties.length) {
+      setSimilarProperties([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      await fetch(`${API_BASE}/auth/csrf/`, { credentials: 'include' })
+      const full = await fetchJson(`${API_BASE}/properties/${detailsProperty.id}/`)
+      if (!cancelled && full?.id) {
+        setDetailsProperty((prev) => (prev && prev.id === full.id ? { ...prev, ...full } : prev))
+      }
+      const sim = await fetchJson(`${API_BASE}/similar/${detailsProperty.id}/`)
+      if (!cancelled && Array.isArray(sim)) {
+        setSimilarProperties(sim)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [detailsProperty?.id, remoteProperties.length, detailSessionKey])
+
+  useEffect(() => {
+    if (!priceChatOpen || !detailsProperty?.id || !currentUser || !remoteProperties.length) {
+      return undefined
+    }
+    let cancelled = false
+    ;(async () => {
+      await fetch(`${API_BASE}/auth/csrf/`, { credentials: 'include' })
+      const r = await fetch(`${API_BASE}/properties/${detailsProperty.id}/chat/`, {
+        credentials: 'include',
+      })
+      if (!r.ok || cancelled) {
+        return
+      }
+      const data = await r.json()
+      if (!Array.isArray(data) || cancelled) {
+        return
+      }
+      setPriceChatMessages(
+        data.map((m) => ({
+          id: m.id,
+          user: m.sender_username,
+          text: m.body,
+          created_at: m.created_at,
+        })),
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [priceChatOpen, detailsProperty?.id, currentUser, remoteProperties.length])
+
+  useEffect(() => {
+    if (!priceChatOpen || !detailsProperty?.id || !currentUser) {
+      if (priceChatWsRef.current) {
+        try {
+          priceChatWsRef.current.close()
+        } catch {
+          /* ignore */
+        }
+        priceChatWsRef.current = null
+      }
+      return undefined
+    }
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(
+      `${proto}//${window.location.host}/ws/chat/${detailsProperty.id}/`,
+    )
+    priceChatWsRef.current = ws
+    ws.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data)
+        setPriceChatMessages((prev) => {
+          const mid = d.id
+          if (mid != null && prev.some((x) => x.id === mid)) {
+            return prev
+          }
+          return [
+            ...prev,
+            {
+              id: d.id,
+              user: d.username,
+              text: d.message,
+              created_at: d.created_at,
+            },
+          ]
+        })
+      } catch {
+        /* ignore */
+      }
+    }
+    return () => {
+      try {
+        ws.close()
+      } catch {
+        /* ignore */
+      }
+      priceChatWsRef.current = null
+    }
+  }, [priceChatOpen, detailsProperty?.id, currentUser])
 
   const reloadFavorites = async () => {
     if (!currentUser) {
@@ -366,6 +501,7 @@ function App() {
     let isMounted = true
 
     const loadData = async () => {
+      await fetch(`${API_BASE}/auth/csrf/`, { credentials: 'include' })
       const [properties, cities, types, analytics, me, gallery] = await Promise.all([
         fetchJson(`${API_BASE}/properties/`),
         fetchJson(`${API_BASE}/cities/`),
@@ -586,6 +722,7 @@ function App() {
         const response = await fetch(`${API_BASE}/favorites/${existing.id}/`, {
           method: 'DELETE',
           credentials: 'include',
+          headers: csrfHeaderObj(false),
         })
         if (response.ok || response.status === 404) {
           await reloadFavorites()
@@ -593,9 +730,7 @@ function App() {
       } else {
         const response = await fetch(`${API_BASE}/favorites/`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: csrfHeaderObj(true),
           credentials: 'include',
           body: JSON.stringify({ property: propertyId }),
         })
@@ -632,7 +767,7 @@ function App() {
         {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: csrfHeaderObj(true),
           body: JSON.stringify({}),
         },
       )
@@ -662,6 +797,56 @@ function App() {
       setNotice('Сеть недоступна или сервер не отвечает. Попробуйте позже.')
     } finally {
       setDealSubmitting(false)
+    }
+  }
+
+  const togglePriceChat = () => {
+    if (!detailsProperty) {
+      return
+    }
+    if (!currentUser) {
+      setAuthPromptKind('deal')
+      setAuthPromptOpen(true)
+      return
+    }
+    setPriceChatOpen((open) => !open)
+  }
+
+  const sendPriceChat = async () => {
+    const text = priceChatInput.trim()
+    if (!text || !detailsProperty?.id) {
+      return
+    }
+    try {
+      await fetch(`${API_BASE}/auth/csrf/`, { credentials: 'include' })
+      const r = await fetch(`${API_BASE}/properties/${detailsProperty.id}/chat/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrfHeaderObj(true),
+        body: JSON.stringify({ message: text }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setNotice(data.detail || 'Не удалось отправить сообщение.')
+        return
+      }
+      setPriceChatInput('')
+      setPriceChatMessages((prev) => {
+        if (data.id != null && prev.some((x) => x.id === data.id)) {
+          return prev
+        }
+        return [
+          ...prev,
+          {
+            id: data.id,
+            user: data.sender_username,
+            text: data.body,
+            created_at: data.created_at,
+          },
+        ]
+      })
+    } catch {
+      setNotice('Сеть недоступна. Попробуйте ещё раз.')
     }
   }
 
@@ -954,6 +1139,7 @@ function App() {
                       onClick={() => {
                         setSelectedPropertyId(property.id)
                         setDetailsProperty(property)
+                        setDetailSessionKey((k) => k + 1)
                       }}
                     >
                       <img
@@ -1395,6 +1581,9 @@ function App() {
                     >
                       {dealSubmitting ? 'Отправка…' : 'К сделке'}
                     </button>
+                    <button type="button" className="nav-btn-secondary" onClick={togglePriceChat}>
+                      {priceChatOpen ? 'Закрыть чат' : 'Спросить о цене'}
+                    </button>
                     <button
                       type="button"
                       className={`favorite-button ${
@@ -1412,7 +1601,87 @@ function App() {
                   <p className="details-deal-hint">
                     После запроса контакты риэлтора появятся в вашем профиле в разделе уведомлений.
                   </p>
+                  {priceChatOpen && (
+                    <div className="price-chat-panel">
+                      <p className="section-label">Чат с риэлтором по объекту</p>
+                      <div className="price-chat-messages">
+                        {priceChatMessages.length === 0 ? (
+                          <p className="muted">
+                            Сообщения сохраняются и приходят риэлтору в уведомления и во вкладку «Чаты с клиентами» в кабинете.
+                          </p>
+                        ) : (
+                          priceChatMessages.map((row, idx) => (
+                            <div
+                              key={row.id != null ? `m-${row.id}` : `m-${row.user}-${idx}`}
+                              className="price-chat-row"
+                            >
+                              <strong>{row.user}:</strong> {row.text}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <div className="price-chat-input-row">
+                        <input
+                          type="text"
+                          className="field-input"
+                          value={priceChatInput}
+                          onChange={(e) => setPriceChatInput(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && sendPriceChat()}
+                          placeholder="Ваше сообщение…"
+                          maxLength={2000}
+                        />
+                        <button
+                          type="button"
+                          className="primary-link-button"
+                          onClick={sendPriceChat}
+                        >
+                          Отправить
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                {remoteProperties.length > 0 && similarProperties.length > 0 && (
+                  <div className="similar-properties-block">
+                    <p className="section-label">Похожие объекты</p>
+                    <p className="similar-properties-hint">
+                      Подбор по городу, комнатам, цене, этажу и близости к тем же станциям метро.
+                    </p>
+                    <div className="similar-properties-grid">
+                      {similarProperties.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          className="similar-property-card"
+                          onClick={async () => {
+                            const full = await fetchJson(`${API_BASE}/properties/${s.id}/`)
+                            if (full?.id) {
+                              setDetailsProperty(full)
+                              setDetailSessionKey((k) => k + 1)
+                            }
+                          }}
+                        >
+                          <img
+                            className="similar-property-img"
+                            src={s.image_url || PLACEHOLDER_IMG}
+                            alt=""
+                          />
+                          <div className="similar-property-body">
+                            <span className={`badge ${s.deal_type}`}>
+                              {s.deal_type === 'sale' ? 'Продажа' : 'Аренда'}
+                            </span>
+                            <strong>{s.title}</strong>
+                            <span>
+                              {s.city_name} · {s.rooms ?? '—'} комн. ·{' '}
+                              {s.floor != null ? `${s.floor} эт.` : 'этаж —'}
+                            </span>
+                            <span className="similar-property-price">{formatMoney(s.price)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <aside className="details-side">
